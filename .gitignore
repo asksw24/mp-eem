@@ -1,0 +1,16 @@
+
+# 
+# *.tif
+/data/** */
+
+*.WMF
+
+/.venv/
+__pycache__/*
+
+# pyenv関係
+.python-version 
+*.FD3
+# analysis/data_processed/data/*/.FD3
+*.TXT
+*.FLR
