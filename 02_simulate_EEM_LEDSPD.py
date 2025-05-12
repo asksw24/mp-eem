@@ -301,13 +301,20 @@ fluorescence.shape
 import numpy as np
 import matplotlib.pyplot as plt
 
+sample_names = []
+for data in srcdata:
+    eem = fluorescence_util.EEMF7000(data.get('path'))
+    sample_names.append(eem.sample)  # ここでサンプル名を保存
+
 # === 例：LEDの励起波長（列方向） ===
 ex_wavelengths = np.linspace(200, 600, spds_fill.shape[0])  # shape: (81,)
 led_peak_wavelengths = ex_wavelengths[np.argmax(spds_fill, axis=0)]  # 各LEDのピーク波長を取得（長さ num_leds）
 
 # === 入力：表示したいサンプル番号とピーク波長 ===
-sample_idx = 2
-desired_peak_wavelength = 300  # 例：450nmのLEDを使いたい
+sample_name = 'PET'  # 任意の名前を指定
+sample_idx = sample_names.index(sample_name)
+
+desired_peak_wavelength = 330  # 例：450nmのLEDを使いたい
 
 # === ピーク波長が最も近いLEDを選ぶ ===
 led_idx = np.argmin(np.abs(led_peak_wavelengths - desired_peak_wavelength))
@@ -332,7 +339,7 @@ ax2.plot(ex_wavelengths, spds_fill[:, led_idx], 'r--', alpha=0.5, label=f'LED SP
 ax2.set_ylabel('LED Excitation SPD')
 ax2.legend(loc='upper right')
 
-plt.title(f'Sample {sample_idx}, LED with Peak {led_peak_wavelengths[led_idx]:.1f} nm')
+plt.title(f'Sample {sample_name}, LED with Peak {led_peak_wavelengths[led_idx]:.1f} nm')
 plt.tight_layout()
 plt.show()
 
