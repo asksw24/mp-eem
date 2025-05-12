@@ -292,9 +292,11 @@ print(eem_array.shape)  # (10, 81, 81) = (励起，蛍光，サンプル（MP）
 print(spds_fill.shape)  # (81, 41) = (光強度（各励起波長），LEDの数)
 
 # shapes: (10, 81, 81) @ (81, 41) → (10, 41, 81)
-fluorescence = np.einsum('seo,el->sle', eem_array, spds_fill)
+eem_array_clean = np.nan_to_num(eem_array)
+fluorescence = np.einsum('soe,el->sle', eem_array_clean, spds_fill)
 
 fluorescence.shape
+
 # fluorescence
 
 # %%
@@ -314,7 +316,7 @@ led_peak_wavelengths = ex_wavelengths[np.argmax(spds_fill, axis=0)]  # 各LEDの
 sample_name = 'PET'  # 任意の名前を指定
 sample_idx = sample_names.index(sample_name)
 
-desired_peak_wavelength = 330  # 例：450nmのLEDを使いたい
+desired_peak_wavelength = 330  
 
 # === ピーク波長が最も近いLEDを選ぶ ===
 led_idx = np.argmin(np.abs(led_peak_wavelengths - desired_peak_wavelength))
@@ -341,7 +343,33 @@ ax2.legend(loc='upper right')
 
 plt.title(f'Sample {sample_name}, LED with Peak {led_peak_wavelengths[led_idx]:.1f} nm')
 plt.tight_layout()
+
+plt.xlim(310, 380)
 plt.show()
+
+
+# %%
+# debug
+# print(fluorescence[sample_idx, led_idx].max())  # 最大値
+# print(fluorescence[sample_idx, led_idx].min())  # 最小値
+# print("Mean:", fluorescence[sample_idx, led_idx].mean())
+
+# print(np.isnan(eem_array_clean).sum())  # NaN の数をカウント
+
+# import matplotlib.pyplot as plt
+
+sample_idx = 0  # 0番目のサンプルを表示
+
+# plt.figure(figsize=(6, 5))
+# plt.imshow(eem_array[sample_idx], aspect='auto', origin='lower',
+#            extent=[200, 600, 200, 600], cmap='viridis')  # 波長の範囲を仮に200–600nmとする
+# plt.xlabel('ex [nm]')
+# plt.ylabel('em [nm]')
+# plt.title(f'EEM of Sample {sample_idx}')
+# plt.colorbar(label='Intensity')
+# plt.show()
+
+plt.plot(np.linspace(200, 600, spds_fill.shape[0]), spds_fill[:, led_idx])
 
 
 # %%
