@@ -293,7 +293,7 @@ print(spds_fill.shape)  # (81, 41) = (光強度（各励起波長），LEDの数
 
 # shapes: (10, 81, 81) @ (81, 41) → (10, 41, 81)
 eem_array_clean = np.nan_to_num(eem_array)
-fluorescence = np.einsum('soe,el->sle', eem_array_clean, spds_fill) # s = sample, o = 励起, e = 放射
+fluorescence = np.einsum('sem,el->slm', eem_array_clean, spds_fill)
 
 
 fluorescence.shape
@@ -346,7 +346,7 @@ ax2.legend(loc='upper right')
 plt.title(f'Sample {sample_name}, LED with Peak {led_peak_wavelengths[led_idx]:.1f} nm')
 plt.tight_layout()
 
-plt.xlim(310, 380)
+# plt.xlim(310, 380)
 plt.show()
 
 
