@@ -288,15 +288,17 @@ spds_fill.shape
 # # EEM × LED
 
 # %%
-print(eem_array.shape)  # (10, 81, 81) = (励起，蛍光，サンプル（MP）)
+print(eem_array.shape)  # (10, 81, 81) = (サンプル数（MP），励起，放射)
 print(spds_fill.shape)  # (81, 41) = (光強度（各励起波長），LEDの数)
 
 # shapes: (10, 81, 81) @ (81, 41) → (10, 41, 81)
 eem_array_clean = np.nan_to_num(eem_array)
-fluorescence = np.einsum('soe,el->sle', eem_array_clean, spds_fill)
+fluorescence = np.einsum('soe,el->sle', eem_array_clean, spds_fill) # s = sample, o = 励起, e = 放射
+
 
 fluorescence.shape
 
+# eem_array
 # fluorescence
 
 # %%
@@ -329,7 +331,7 @@ em_wavelengths = np.linspace(200, 600, fluorescence.shape[2])  # shape: (81,)
 plt.figure(figsize=(10, 5))
 
 # 蛍光スペクトル
-plt.plot(em_wavelengths, fluorescence[sample_idx, led_idx], label=f'Fluorescence (Sample {sample_idx})')
+plt.plot(em_wavelengths, fluorescence[sample_idx, led_idx], label=f'Fluorescence (Sample {sample_name})')
 plt.xlabel('Emission Wavelength [nm]')
 plt.ylabel('Fluorescence Intensity')
 plt.grid(True)
@@ -349,30 +351,54 @@ plt.show()
 
 
 # %%
-# debug
-# print(fluorescence[sample_idx, led_idx].max())  # 最大値
-# print(fluorescence[sample_idx, led_idx].min())  # 最小値
-# print("Mean:", fluorescence[sample_idx, led_idx].mean())
+# 蛍光成分以外がnanで保存されているか
+eem_arrasample_idx = 0
+eem_matrix = eem_array[sample_idx]  # shape: (ex, em) = (81, 81)
 
-# print(np.isnan(eem_array_clean).sum())  # NaN の数をカウント
-
-# import matplotlib.pyplot as plt
-
-sample_idx = 0  # 0番目のサンプルを表示
-
-# plt.figure(figsize=(6, 5))
-# plt.imshow(eem_array[sample_idx], aspect='auto', origin='lower',
-#            extent=[200, 600, 200, 600], cmap='viridis')  # 波長の範囲を仮に200–600nmとする
-# plt.xlabel('ex [nm]')
-# plt.ylabel('em [nm]')
-# plt.title(f'EEM of Sample {sample_idx}')
-# plt.colorbar(label='Intensity')
-# plt.show()
-
-plt.plot(np.linspace(200, 600, spds_fill.shape[0]), spds_fill[:, led_idx])
-
+plt.figure(figsize=(6, 5))
+plt.imshow(eem_matrix, origin='lower', cmap='jet', aspect='auto')
+plt.colorbar(label='Intensity')
+plt.title(f'EEM Matrix for Sample {sample_names[sample_idx]} (before NaN to 0)')
+plt.xlabel('Excitation index')
+plt.ylabel('Emission index')
+plt.plot(np.arange(81), np.arange(81), 'w--')  # 対角線（自己波長）を強調
+plt.show()
 
 # %%
+# 励起波長（デルタ関数，理想的なナローバンド）ごとの放射波長plot 
+import numpy as np
+import matplotlib.pyplot as plt
+
+# 波長軸
+ex_wavelengths = np.linspace(200, 600, eem_array.shape[1])
+em_wavelengths = np.linspace(200, 600, eem_array.shape[2])
+
+# 指定：サンプル名と励起波長のリスト
+sample_name = "PET"
+desired_ex_wavelengths = [310
+                          , 320
+                          , 330
+                          , 340
+                          , 350
+                          ]  # 任意の励起波長（複数）
+
+# インデックス変換
+sample_idx = sample_names.index(sample_name)
+ex_indices = [np.argmin(np.abs(ex_wavelengths - wl)) for wl in desired_ex_wavelengths]
+
+# プロット
+plt.figure(figsize=(10, 5))
+for i, ex_idx in enumerate(ex_indices):
+    em_spectrum = eem_array_clean[sample_idx, ex_idx, :]
+    plt.plot(em_wavelengths, em_spectrum, label=f'Ex={ex_wavelengths[ex_idx]:.1f} nm')
+
+plt.xlabel('Emission Wavelength [nm]')
+plt.ylabel('Fluorescence Intensity')
+plt.title(f'Sample: {sample_name} - Fluorescence for Various Excitations')
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.show()
 
 
 # %%
