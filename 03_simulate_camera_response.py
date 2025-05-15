@@ -197,11 +197,11 @@ print(f'EEM data shape: {eem_array.shape}')
 # # LED SPD
 
 # %%
-_param_set = '200to600nm_narrow'
-# _param_set = '200to600nm_wide'
+# _param_set = '200to600nm_narrow'
+_param_set = '200to600nm_wide'
 _params = {
-    '200to600nm_narrow':{'wl_start': 200, 'wl_end': 600, 'band_steps': 10, 'band_resolution': 5, 'wl_FWHM': 20},
-    '200to600nm_wide':  {'wl_start': 200, 'wl_end': 600, 'band_steps': 10, 'band_resolution': 1, 'wl_FWHM': 40},
+    '200to600nm_narrow':{'wl_start': 200, 'wl_end': 600, 'band_steps': 10, 'band_resolution': 5, 'wl_FWHM': 10},
+    '200to600nm_wide':  {'wl_start': 200, 'wl_end': 600, 'band_steps': 10, 'band_resolution': 5, 'wl_FWHM': 50},
     }
 param = _params[_param_set]
 
@@ -268,10 +268,12 @@ plt.legend(bbox_to_anchor=(1.0, 1.15))
 fig = plt.figure(1)
 ax = fig.add_subplot(1, 1, 1)
 plt.plot(
-    wl, spds_fill[:,7], label=[
-    'SPDs'if i == 0 else '_nolegend_' for i in [7,]])
+    wl, spds_fill[:,13], label=[
+    'SPDs'if i == 0 else '_nolegend_' for i in [7,]]
+# , linewidth = 8
+    )
 # plt.xlim([wl[0], wl[-1]])
-plt.xlim([250, 300])
+plt.xlim([300, 360])
 plt.ylim([0, plt.ylim()[1]])
 plt.xlabel('Wavelength [nm]')
 plt.ylabel('Relative Power')
@@ -279,6 +281,104 @@ plt.grid(True)
 plt.legend(bbox_to_anchor=(1.0, 1.15))
 
 spds_fill.shape
+wl_peeks
+
+# %% [markdown]
+# ---
+
+# %% [markdown]
+# # ハイパスフィルタの設定
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+
+def generate_cutoff_list(peak_wavelengths, fwhm, margin_step, step):
+    """
+    各LEDに対応するハイパスフィルタのカットオフ波長を計算して返す。
+
+    Parameters:
+        peak_wavelengths (list or np.ndarray): 各LEDの中心波長
+        fwhm (float): LEDのFWHM（半値幅）
+        margin_step (float): 自己反射回避マージンのステップサイズ
+        margin_num (int): ステップ数（margin_step × margin_numが追加マージン）
+
+    Returns:
+        list of float: 各LEDに対応したカットオフ波長（nm）
+    """
+    margin = margin_step * step
+    cutoff_list = np.array([pw + fwhm + margin for pw in peak_wavelengths])
+    
+    return cutoff_list
+
+
+def apply_highpass_filter(spds, wavelengths, cutoff_list):
+    """
+    spds: np.ndarray, shape=(num_wavelengths, num_leds)
+    wavelengths: 1D array of wavelengths (length=num_wavelengths)
+    cutoff_list: list or array of cutoff wavelengths per LED (length=num_leds)
+    
+    Returns: filtered SPD with same shape as spds
+    """
+    spds_filtered = spds.copy()
+    for i, cutoff in enumerate(cutoff_list):
+        spds_filtered[:, i] = np.where(wavelengths >= cutoff, spds_filtered[:, i], 0)
+    return spds_filtered
+
+cutoff_list = generate_cutoff_list(wl_peeks, fwhm=20, margin_step=6, step=5)
+
+# cutoff_list の長さは spds_fillの列数と一致させる
+if len(cutoff_list) != spds_fill.shape[1]:
+    raise ValueError("cutoff_list length must match number of LEDs")
+
+spds_fill_filtered = apply_highpass_filter(spds_fill, wl, cutoff_list)
+
+# プロット例（元スペクトル vs フィルタ適用後）
+plt.figure(figsize=(10, 5))
+for i in range(spds_fill.shape[1]):
+    plt.plot(wl, spds_fill[:, i], alpha=0.3, label=f'Original LED {i}')
+    plt.plot(wl, spds_fill_filtered[:, i], linestyle='--', label=f'Filtered LED {i}')
+plt.xlabel('Wavelength (nm)')
+plt.ylabel('Relative Power')
+plt.title('LED SPDs Before and After High-pass Filtering')
+# plt.legend(bbox_to_anchor=(1.05, 1))
+plt.tight_layout()
+plt.show()
+
+
+# %%
+import matplotlib.pyplot as plt
+
+# 表示したいLEDのインデックス（例: LED 13）
+led_idx = 13
+cutoff_wl = cutoff_list[led_idx]
+
+fig = plt.figure(figsize=(6, 4))
+ax = fig.add_subplot(1, 1, 1)
+
+# 元のスペクトル
+ax.plot(wl, spds_fill[:, led_idx], label='Original SPD', alpha=0.3)
+
+# フィルタ後のスペクトル
+ax.plot(wl, spds_fill_filtered[:, led_idx], linestyle='--', label='Filtered SPD')
+
+# カットオフ波長を縦の点線で表示
+ax.axvline(cutoff_wl, color='red', linestyle=':', label=f'Cutoff {cutoff_wl:.0f} nm')
+
+# 表示範囲の設定（任意）
+plt.xlim([300, 400])
+plt.ylim([0, plt.ylim()[1]])
+plt.xlabel('Wavelength [nm]')
+plt.ylabel('Relative Power')
+plt.grid(True)
+plt.legend(bbox_to_anchor=(1.0, 1.15))
+plt.title(f'SPD for LED {led_idx} (peak: {wl_peeks[led_idx]} nm)')
+plt.tight_layout()
+plt.show()
+
+print(f"wl_peaks:\n{wl_peeks}")
+print(f"cutoff_list:\n{cutoff_list}")
+len(cutoff_list)
 
 
 # %% [markdown]
@@ -377,9 +477,9 @@ em_wavelengths = np.linspace(200, 600, fluorescence.shape[2])  # 放射波長
 led_peak_wavelengths = ex_wavelengths[np.argmax(spds_fill, axis=0)]
 
 # === 任意指定（表示するサンプル・LED波長）===
-sample_name = 'PET'
+sample_name = 'ABS'
 sample_idx = sample_names.index(sample_name)
-desired_peak_wavelength = 330
+desired_peak_wavelength = 360
 led_idx = np.argmin(np.abs(led_peak_wavelengths - desired_peak_wavelength))
 print(f"Selected LED {led_idx} with peak wavelength {led_peak_wavelengths[led_idx]:.1f} nm")
 
@@ -410,6 +510,9 @@ ax2.legend(loc='upper right')
 plt.title(f'Sample: {sample_name}, LED Peak: {led_peak_wavelengths[led_idx]:.1f} nm')
 plt.tight_layout()
 plt.show()
+
+
+# %%
 
 
 
