@@ -154,7 +154,7 @@ for data in srcdata:
     plt.figure()
     # eem.plot_contour(level=100, show_sample_name=True)
 
-    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6, inplace=True, )
+    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=0, inplace=True, )
     eem.plot_heatmap()
 
     plt.title(eem.sample)
@@ -270,10 +270,10 @@ ax = fig.add_subplot(1, 1, 1)
 plt.plot(
     wl, spds_fill[:,13], label=[
     'SPDs'if i == 0 else '_nolegend_' for i in [7,]]
-# , linewidth = 8
+, linewidth = 8
     )
 # plt.xlim([wl[0], wl[-1]])
-plt.xlim([300, 360])
+plt.xlim([280, 380])
 plt.ylim([0, plt.ylim()[1]])
 plt.xlabel('Wavelength [nm]')
 plt.ylabel('Relative Power')
@@ -367,7 +367,7 @@ def generate_cutoff_list(peak_wavelengths, fwhm, margin_step, step):
     
     return cutoff_list
 
-cutoff_list = generate_cutoff_list(wl_peeks, fwhm=20, margin_step=6, step=5)
+cutoff_list = generate_cutoff_list(wl_peeks, fwhm=50, margin_step=6, step=5)
 # cutoff_list の長さは spds_fillの列数と一致させる
 if len(cutoff_list) != spds_fill.shape[1]:
     raise ValueError("cutoff_list length must match number of LEDs")
@@ -431,7 +431,7 @@ effective_camera_sens = camera_sensitivity[:, None] * hp_filter_matrix
 
 # === 使用例 ===
 plot_effective_camera_sens_by_peak(
-    peak_wavelength=330,  # ここを任意で変える
+    peak_wavelength=300,  # ここを任意で変える
     wl_peaks=wl_peeks,
     wavelengths=wavelengths,
     camera_sensitivity=camera_sensitivity,
@@ -451,18 +451,17 @@ plot_effective_camera_sens_by_peak(
 print(eem_array.shape)  # (10, 81, 81) = (サンプル数（MP），励起，放射)
 print(spds_fill.shape)  # (81, 41) = (光強度（各励起波長），LEDの数)
 
-# shapes: (10, 81, 81) @ (81, 41) → (10, 41, 81)
-eem_array_clean = np.nan_to_num(eem_array)
-fluorescence = np.einsum('sem,el->slm', eem_array_clean, spds_fill)
+# shapes: (10, 81, 81) @ (81, 41) → (10, 41, 81){(サンプル数（MP），LEDの数，放射（蛍光）)}　
+eem_array = np.nan_to_num(eem_array)
+fluorescence = np.einsum('sem,el->slm', eem_array, spds_fill)
+print(fluorescence.shape) 
 
-# 蛍光 × カメラ感度 → カメラが感じる信号
-camera_signal = np.einsum('slm,m->sl', fluorescence, camera_sensitivity)
+print(effective_camera_sens.shape)
+# shapes: (10, 41, 81) @ (81, 41) → 
+# 蛍光 × カメラ感度(with Filter) → カメラが感じる信号
+camera_signals = np.einsum('slm,ml->sl', fluorescence, effective_camera_sens)
 
-# (samples, leds, emission_wavelengths) × (emission_wavelengths, leds) → (samples, leds)
-camera_signal_filtered = np.einsum('slm,ml->sl', fluorescence, camera_sensitivity_matrix)
 
-
-print(camera_signal.shape)  # (samples, leds)
 
 # %%
 import numpy as np
@@ -484,32 +483,39 @@ led_peak_wavelengths = ex_wavelengths[np.argmax(spds_fill, axis=0)]
 # === 任意指定（表示するサンプル・LED波長）===
 sample_name = 'ABS'
 sample_idx = sample_names.index(sample_name)
-desired_peak_wavelength = 360
+desired_peak_wavelength = 300
 led_idx = np.argmin(np.abs(led_peak_wavelengths - desired_peak_wavelength))
 print(f"Selected LED {led_idx} with peak wavelength {led_peak_wavelengths[led_idx]:.1f} nm")
 
 # === 該当サンプル・LEDの蛍光スペクトルとLED SPD・カメラ感度取得 ===
 fluor = fluorescence[sample_idx, led_idx]  # shape: (81,)
 led_spd = spds_fill[:, led_idx]           # shape: (81,)
-cam_resp = fluor * camera_sensitivity     # 蛍光 × カメラ感度
+cam_resp = fluor * effective_camera_sens[:, led_idx]     # 蛍光 × カメラ感度
 cam_sens = camera_sensitivity             # shape: (81,)
+
+
+# === ハイパスフィルタ情報 ===
+hp_curve = hp_filter_matrix[:, led_idx]  # shape: (81,)
+cutoff = cutoff_list[led_idx]
 
 # === プロット ===
 fig, ax1 = plt.subplots(figsize=(10, 5))
 
 # 左軸：蛍光スペクトル・カメラ応答
-ax1.plot(em_wavelengths, fluor, label='Fluorescence', color='blue')
-ax1.plot(em_wavelengths, cam_resp, label='Camera Response (Fluorescence × Sensitivity)', color='green', linestyle='--')
+ax1.plot(em_wavelengths, fluor, label='Fluorescence', color='green', linestyle='--')
+ax1.plot(em_wavelengths, cam_resp, label='Camera Response (Fluorescence × Sensitivity)', color='blue')
 ax1.set_xlabel('Wavelength [nm]')
 ax1.set_ylabel('Intensity (Fluorescence / Camera Response)')
 ax1.grid(True)
 ax1.legend(loc='upper left')
 
-# 右軸：LED SPD・カメラ感度
+# 右軸：LED SPD・カメラ感度・ハイパスフィルタ
 ax2 = ax1.twinx()
 ax2.plot(ex_wavelengths, led_spd, 'r--', alpha=0.6, label='LED SPD')
 ax2.plot(em_wavelengths, cam_sens, 'm:', alpha=0.7, label='Camera Sensitivity')
-ax2.set_ylabel('LED SPD / Camera Sensitivity')
+ax2.plot(em_wavelengths, hp_curve, color='orange', linestyle='-', alpha=0.7, label='High-pass Filter')
+ax2.axvline(cutoff, color='orange', linestyle='dotted', linewidth=2, label=f'Cutoff = {cutoff:.1f} nm')
+ax2.set_ylabel('LED SPD / Camera Sensitivity / HP Filter')
 ax2.legend(loc='upper right')
 
 plt.title(f'Sample: {sample_name}, LED Peak: {led_peak_wavelengths[led_idx]:.1f} nm')
