@@ -284,104 +284,6 @@ spds_fill.shape
 wl_peeks
 
 # %% [markdown]
-# ---
-
-# %% [markdown]
-# # ハイパスフィルタの設定
-
-# %%
-import numpy as np
-import matplotlib.pyplot as plt
-
-def generate_cutoff_list(peak_wavelengths, fwhm, margin_step, step):
-    """
-    各LEDに対応するハイパスフィルタのカットオフ波長を計算して返す。
-
-    Parameters:
-        peak_wavelengths (list or np.ndarray): 各LEDの中心波長
-        fwhm (float): LEDのFWHM（半値幅）
-        margin_step (float): 自己反射回避マージンのステップサイズ
-        margin_num (int): ステップ数（margin_step × margin_numが追加マージン）
-
-    Returns:
-        list of float: 各LEDに対応したカットオフ波長（nm）
-    """
-    margin = margin_step * step
-    cutoff_list = np.array([pw + fwhm + margin for pw in peak_wavelengths])
-    
-    return cutoff_list
-
-
-def apply_highpass_filter(spds, wavelengths, cutoff_list):
-    """
-    spds: np.ndarray, shape=(num_wavelengths, num_leds)
-    wavelengths: 1D array of wavelengths (length=num_wavelengths)
-    cutoff_list: list or array of cutoff wavelengths per LED (length=num_leds)
-    
-    Returns: filtered SPD with same shape as spds
-    """
-    spds_filtered = spds.copy()
-    for i, cutoff in enumerate(cutoff_list):
-        spds_filtered[:, i] = np.where(wavelengths >= cutoff, spds_filtered[:, i], 0)
-    return spds_filtered
-
-cutoff_list = generate_cutoff_list(wl_peeks, fwhm=20, margin_step=6, step=5)
-
-# cutoff_list の長さは spds_fillの列数と一致させる
-if len(cutoff_list) != spds_fill.shape[1]:
-    raise ValueError("cutoff_list length must match number of LEDs")
-
-spds_fill_filtered = apply_highpass_filter(spds_fill, wl, cutoff_list)
-
-# プロット例（元スペクトル vs フィルタ適用後）
-plt.figure(figsize=(10, 5))
-for i in range(spds_fill.shape[1]):
-    plt.plot(wl, spds_fill[:, i], alpha=0.3, label=f'Original LED {i}')
-    plt.plot(wl, spds_fill_filtered[:, i], linestyle='--', label=f'Filtered LED {i}')
-plt.xlabel('Wavelength (nm)')
-plt.ylabel('Relative Power')
-plt.title('LED SPDs Before and After High-pass Filtering')
-# plt.legend(bbox_to_anchor=(1.05, 1))
-plt.tight_layout()
-plt.show()
-
-
-# %%
-import matplotlib.pyplot as plt
-
-# 表示したいLEDのインデックス（例: LED 13）
-led_idx = 13
-cutoff_wl = cutoff_list[led_idx]
-
-fig = plt.figure(figsize=(6, 4))
-ax = fig.add_subplot(1, 1, 1)
-
-# 元のスペクトル
-ax.plot(wl, spds_fill[:, led_idx], label='Original SPD', alpha=0.3)
-
-# フィルタ後のスペクトル
-ax.plot(wl, spds_fill_filtered[:, led_idx], linestyle='--', label='Filtered SPD')
-
-# カットオフ波長を縦の点線で表示
-ax.axvline(cutoff_wl, color='red', linestyle=':', label=f'Cutoff {cutoff_wl:.0f} nm')
-
-# 表示範囲の設定（任意）
-plt.xlim([300, 400])
-plt.ylim([0, plt.ylim()[1]])
-plt.xlabel('Wavelength [nm]')
-plt.ylabel('Relative Power')
-plt.grid(True)
-plt.legend(bbox_to_anchor=(1.0, 1.15))
-plt.title(f'SPD for LED {led_idx} (peak: {wl_peeks[led_idx]} nm)')
-plt.tight_layout()
-plt.show()
-
-print(f"wl_peaks:\n{wl_peeks}")
-print(f"cutoff_list:\n{cutoff_list}")
-len(cutoff_list)
-
-
-# %% [markdown]
 # ----
 
 # %% [markdown]
@@ -444,6 +346,105 @@ camera_sensitivity.shape
 # ---
 
 # %% [markdown]
+# # カメラ側にハイパスフィルタを適用
+
+# %%
+def generate_cutoff_list(peak_wavelengths, fwhm, margin_step, step):
+    """
+    各LEDに対応するハイパスフィルタのカットオフ波長を計算して返す。
+
+    Parameters:
+        peak_wavelengths (list or np.ndarray): 各LEDの中心波長
+        fwhm (float): LEDのFWHM（半値幅）
+        margin_step (float): 自己反射回避マージンのステップサイズ
+        margin_num (int): ステップ数（margin_step × margin_numが追加マージン）
+
+    Returns:
+        list of float: 各LEDに対応したカットオフ波長（nm）
+    """
+    margin = margin_step * step
+    cutoff_list = np.array([pw + fwhm + margin for pw in peak_wavelengths])
+    
+    return cutoff_list
+
+cutoff_list = generate_cutoff_list(wl_peeks, fwhm=20, margin_step=6, step=5)
+# cutoff_list の長さは spds_fillの列数と一致させる
+if len(cutoff_list) != spds_fill.shape[1]:
+    raise ValueError("cutoff_list length must match number of LEDs")
+
+print(f"wl_peeks:{wl_peeks}")
+print(f"cutoff_list:{cutoff_list}")
+
+
+
+# %%
+def generate_hp_filter_matrix(wavelengths, cutoff_list, transition_width):
+    hp_matrix = np.zeros((len(wavelengths), len(cutoff_list)))
+    for i, cutoff in enumerate(cutoff_list):
+        hp_matrix[:, i] = 1 / (1 + np.exp(-(wavelengths - cutoff) / transition_width))
+    return hp_matrix
+
+def plot_effective_camera_sens_by_peak(peak_wavelength, wl_peaks, wavelengths,
+                                       camera_sensitivity, hp_filter_matrix, spds_fill,
+                                       cutoff_list):
+    """
+    指定したLEDのピーク波長に対応するindexの有効カメラ感度をプロット。
+    """
+    idx = np.argmin(np.abs(np.array(wl_peaks) - peak_wavelength))
+    cutoff = cutoff_list[idx]
+
+    plt.figure(figsize=(10, 5))
+
+    # 有効感度
+    plt.plot(wavelengths, effective_camera_sens[:, idx], label=f'Effective Sens (LED @ {wl_peaks[idx]}nm)', linewidth=2)
+    
+    # ハイパスフィルタ
+    plt.plot(wavelengths, hp_filter_matrix[:, idx], label='High-pass Filter', linestyle='dashed')
+    
+    # カメラ感度
+    plt.plot(wavelengths, camera_sensitivity, label='Camera Sensitivity', color='gray', alpha=0.7)
+    
+    # LED SPD
+    if spds_fill is not None:
+        plt.plot(wavelengths, spds_fill[:, idx], label='LED SPD', linestyle='dashdot', alpha=0.7)
+
+    # --- カットオフ波長の縦線 ---
+    plt.axvline(cutoff, color='red', linestyle='dotted', linewidth=3, label=f'Cutoff = {cutoff:.1f} nm')
+    
+    plt.title(f'Effective Camera Sensitivity (LED peak {wl_peaks[idx]} nm)')
+    plt.xlabel("Wavelength [nm]")
+    plt.ylabel("Sensitivity / Intensity")
+    plt.grid(True)
+    plt.legend()
+    plt.xlim(wavelengths[0], wavelengths[-1])
+    plt.ylim(0, 1.05)
+    plt.tight_layout()
+    plt.show()
+
+# 事前定義済みの変数:
+# wavelengths, cutoff_list, camera_sensitivity, wl_peaks, spds_fill
+
+# フィルタパラメータ
+transition_width = 10  # nm
+hp_filter_matrix = generate_hp_filter_matrix(wavelengths, cutoff_list, transition_width)
+effective_camera_sens = camera_sensitivity[:, None] * hp_filter_matrix
+
+# === 使用例 ===
+plot_effective_camera_sens_by_peak(
+    peak_wavelength=330,  # ここを任意で変える
+    wl_peaks=wl_peeks,
+    wavelengths=wavelengths,
+    camera_sensitivity=camera_sensitivity,
+    hp_filter_matrix=hp_filter_matrix,
+    spds_fill=spds_fill,
+    cutoff_list=cutoff_list
+)
+
+
+# %% [markdown]
+# ---
+
+# %% [markdown]
 # # EEM × LED × カメラ感度
 
 # %%
@@ -456,6 +457,10 @@ fluorescence = np.einsum('sem,el->slm', eem_array_clean, spds_fill)
 
 # 蛍光 × カメラ感度 → カメラが感じる信号
 camera_signal = np.einsum('slm,m->sl', fluorescence, camera_sensitivity)
+
+# (samples, leds, emission_wavelengths) × (emission_wavelengths, leds) → (samples, leds)
+camera_signal_filtered = np.einsum('slm,ml->sl', fluorescence, camera_sensitivity_matrix)
+
 
 print(camera_signal.shape)  # (samples, leds)
 
