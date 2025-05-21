@@ -154,7 +154,7 @@ for data in srcdata:
     plt.figure()
     # eem.plot_contour(level=100, show_sample_name=True)
 
-    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=0, inplace=True, )
+    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6, inplace=True, )
     eem.plot_heatmap()
 
     plt.title(eem.sample)
@@ -288,9 +288,6 @@ wl_peeks
 
 # %% [markdown]
 # # camera sensitivity
-
-# %%
-
 
 # %%
 import numpy as np
@@ -455,6 +452,7 @@ plot_effective_camera_sens_by_peak(
     cutoff_list=cutoff_list
 )
 
+hp_filter_matrix.shape
 
 # %% [markdown]
 # ---
@@ -496,9 +494,9 @@ em_wavelengths = np.linspace(200, 600, fluorescence.shape[2])  # 放射波長
 led_peak_wavelengths = ex_wavelengths[np.argmax(spds_fill, axis=0)]
 
 # === 任意指定（表示するサンプル・LED波長）===
-sample_name = 'PET'
+sample_name = 'ABS'
 sample_idx = sample_names.index(sample_name)
-desired_peak_wavelength = 330
+desired_peak_wavelength = 400
 led_idx = np.argmin(np.abs(led_peak_wavelengths - desired_peak_wavelength))
 print(f"Selected LED {led_idx} with peak wavelength {led_peak_wavelengths[led_idx]:.1f} nm")
 
@@ -544,159 +542,131 @@ plt.show()
 # %% [markdown]
 # # カメラ出力空間plot
 
+# %% [markdown]
+# ## 分光感度（複数センサチャネル）　× ハイパスフィルタ × 放射波長
+
 # %%
-print(fluorescence.shape)               # (10, 41, 81){(サンプル数（MP），LEDの数，放射（蛍光）)}
-print(effective_camera_sens.shape)      # (81, 41) = (波長，LEDの数分のカメラ感度)
+# print(fluorescence.shape)               # (10, 41, 81){(サンプル数（MP），LEDの数，放射（蛍光）)}
 # print(sensitivity_all.shape)            # (81, 3) = (波長，RGBセンサチャネル)
+# print(hp_filter_matrix.shape)
 
+# 有効感度 = 分光感度 × フィルタ
+effective_sens = sensitivity_all[:, :, None] * hp_filter_matrix[:, None, :]
+print(effective_sens.shape)
+
+# それぞれのセンサチャネル応答 = 放射波長 × 有効感度
 # shapes: (10, 41, 81) @ (81, 41) → 
-camera_rgb = np.einsum('slm,mc->slc', fluorescence, sensitivity_all)
-
-# camera_rgb = np.einsum('slm,mc->slc', fluorescence, effective_camera_sens)
-
+camera_rgb = np.einsum('sle,lcr->slc', fluorescence, effective_sens.transpose(2,1,0))
 print(camera_rgb.shape)
+
 
 # plt.plot(em_wavelengths, camera_rgb[:, 1])
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import gradio as gr
 
-def plot_rgb_by_excitation(selected_peak):
-    led_idx = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
+def plot_sensor_led_filter(wavelengths, sensitivity_all, hp_filter_matrix,
+                           effective_sens, spds_fill, led_idx):
+    """
+    指定したLEDに対して、感度・フィルタ・LEDスペクトルをまとめて表示
+    """
+    plt.figure(figsize=(10, 6))
+    
+    # --- 各種成分の取得 ---
+    led_wavelength = wl_peeks[led_idx]
+    
+    # 元のRGB感度（3チャンネル）
+    for i, color in enumerate(['r', 'g', 'b']):
+        plt.plot(wavelengths, sensitivity_all[:, i],
+                 linestyle='dashed', color=color, alpha=0.5, label=f'Original {color.upper()} Sens.')
+    
+    # ハイパスフィルタ
+    plt.plot(wavelengths, hp_filter_matrix[:, led_idx],
+             linestyle='dotted', color='black', label='High-pass Filter')
 
-    fig = plt.figure(figsize=(8, 6))
-    ax = fig.add_subplot(111, projection='3d')
+    # 有効感度（フィルタ適用後）
+    for i, color in enumerate(['r', 'g', 'b']):
+        plt.plot(wavelengths, effective_sens[:, i, led_idx],
+                 linestyle='solid', color=color, label=f'Effective {color.upper()} Sens.')
 
-    for s, name in enumerate(sample_names):
-        rgb_vals = camera_rgb[s, led_idx]
-        R, G, B = rgb_vals
-        ax.scatter(R, G, B, label=name, s=60, alpha=0.8)
-
-    ax.set_xlabel('Red channel')
-    ax.set_ylabel('Green channel')
-    ax.set_zlabel('Blue channel')
-    ax.set_title(f'RGB Responses at Excitation Peak {led_peak_wavelengths[led_idx]:.0f} nm')
-    ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1))
-
-    # 軸範囲を揃える
-    min_val = np.min(camera_rgb)
-    max_val = np.max(camera_rgb)
-    ax.set_xlim(min_val, max_val)
-    ax.set_ylim(min_val, max_val)
-    ax.set_zlim(min_val, max_val)
-
+    # LEDスペクトル
+    plt.plot(wavelengths, spds_fill[:, led_idx],
+             linestyle='dashdot', color='magenta', label=f'LED SPD ({led_wavelength:.0f} nm)')
+    
+    # --- 描画設定 ---
+    plt.title(f"LED @ {led_wavelength:.0f} nm - Sensor Response & Filter")
+    plt.xlabel("Wavelength [nm]")
+    plt.ylabel("Sensitivity / Intensity (normalized)")
+    plt.ylim(0, 1.05)
+    plt.grid(True)
+    plt.legend()
     plt.tight_layout()
-    plt.close(fig)  # 余分な描画を防ぐ
-    return fig
+    plt.show()
 
-# Gradio UI作成
-peak_min, peak_max = int(led_peak_wavelengths.min()), int(led_peak_wavelengths.max())
-step = int(np.min(np.diff(led_peak_wavelengths)))
-
-iface = gr.Interface(
-    fn=plot_rgb_by_excitation,
-    inputs=gr.Slider(minimum=peak_min, maximum=peak_max, step=step, label="励起波長 [nm]", interactive=True),
-    outputs=gr.Plot(label="RGB 3D Response"),
-    title="励起波長スライダーで変わるRGB 3Dプロット",
-    live= True
+# === 使用例 ===
+plot_sensor_led_filter(
+    wavelengths=wavelengths,
+    sensitivity_all=sensitivity_all,
+    hp_filter_matrix=hp_filter_matrix,
+    effective_sens=effective_sens,
+    spds_fill=spds_fill,
+    led_idx=19  # ← 任意のLEDインデックスに変更可能
 )
 
-iface.launch()
 
+# %% [markdown]
+# ## カメラ出力空間
 
 # %%
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+import plotly.graph_objects as go
 import gradio as gr
-
-# 事前計算で辞書作成（最初に一度だけ実行）
-precomputed_rgb = {}
-for idx, peak in enumerate(led_peak_wavelengths):
-    precomputed_rgb[peak] = camera_rgb[:, idx, :]  # shape=(samples, 3)
-
-# プロット関数は辞書から取り出すだけに
-def plot_rgb_by_excitation_fast(selected_peak):
-    # 一番近いピークに丸める（辞書のキーに合わせる）
-    nearest_peak = min(precomputed_rgb.keys(), key=lambda x: abs(x - selected_peak))
-    rgb_vals_all_samples = precomputed_rgb[nearest_peak]
-
-    fig = plt.figure(figsize=(8, 6))
-    ax = fig.add_subplot(111, projection='3d')
-
-    for s, name in enumerate(sample_names):
-        R, G, B = rgb_vals_all_samples[s]
-        ax.scatter(R, G, B, label=name, s=60, alpha=0.8)
-
-    ax.set_xlabel('Red channel')
-    ax.set_ylabel('Green channel')
-    ax.set_zlabel('Blue channel')
-    ax.set_title(f'RGB Responses at Excitation Peak {nearest_peak:.0f} nm')
-    ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1))
-    plt.tight_layout()
-    plt.close(fig)
-    return fig
-
-# Gradio UI作成
-peak_min, peak_max = int(led_peak_wavelengths.min()), int(led_peak_wavelengths.max())
-step = int(np.min(np.diff(led_peak_wavelengths)))
-
-iface = gr.Interface(
-    fn=plot_rgb_by_excitation,
-    inputs=gr.Slider(minimum=peak_min, maximum=peak_max, step=step, label="励起波長 [nm]", interactive=True),
-    outputs=gr.Plot(label="RGB 3D Response"),
-    title="励起波長スライダーで変わるRGB 3Dプロット",
-    live= True
-)
-
-iface.launch()
-
-
-# %%
-import plotly.graph_objs as go
-import gradio as gr
-import numpy as np
 
 def plot_rgb_by_excitation_plotly(selected_peak):
     led_idx = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
+
     fig = go.Figure()
 
+    # サンプルごとに散布
     for s, name in enumerate(sample_names):
         rgb_vals = camera_rgb[s, led_idx]
+        R, G, B = rgb_vals
         fig.add_trace(go.Scatter3d(
-            x=[rgb_vals[0]], y=[rgb_vals[1]], z=[rgb_vals[2]],
-            mode='markers',
+            x=[R], y=[G], z=[B],
+            mode='markers+text',
             marker=dict(size=6),
+            text=[name],
             name=name
         ))
 
+    # 軸範囲・比率設定
+    min_val = np.min(camera_rgb)
+    max_val = np.max(camera_rgb)
     fig.update_layout(
+        width=900,
+        height=800,
         scene=dict(
-            xaxis_title='Red channel',
-            yaxis_title='Green channel',
-            zaxis_title='Blue channel',
+            xaxis=dict(title='Red', range=[min_val, max_val]),
+            yaxis=dict(title='Green', range=[min_val, max_val]),
+            zaxis=dict(title='Blue', range=[min_val, max_val]),
+            aspectmode="cube"  # 軸スケールを等しく
         ),
-        title=f'RGB Responses at Excitation Peak {led_peak_wavelengths[led_idx]:.0f} nm',
-        legend=dict(x=1.1, y=1)
+        title=f"RGB Responses at Excitation Peak {led_peak_wavelengths[led_idx]:.0f} nm"
     )
+
     return fig
+
+# Gradio UI
+peak_min, peak_max = int(led_peak_wavelengths.min()), int(led_peak_wavelengths.max())
+step = int(np.min(np.diff(led_peak_wavelengths)))
+
 iface = gr.Interface(
     fn=plot_rgb_by_excitation_plotly,
-    inputs=gr.Slider(
-        minimum=int(led_peak_wavelengths.min()),
-        maximum=int(led_peak_wavelengths.max()),
-        step=int(np.min(np.diff(led_peak_wavelengths))),
-        label="励起波長 [nm]",
-        interactive=True
-    ),
+    inputs=gr.Slider(minimum=peak_min, maximum=peak_max, step=step, label="励起波長 [nm]", interactive=True),
     outputs=gr.Plot(label="インタラクティブ3D RGBプロット"),
-    title="インタラクティブ3D RGBプロット（Plotly）",
-    live=True
+    live=True,
+    title="3D RGBプロット（Plotly）"
 )
-
 
 iface.launch()
 
