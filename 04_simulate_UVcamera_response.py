@@ -545,6 +545,9 @@ plt.show()
 # %% [markdown]
 # # カメラ出力空間plot
 
+# %%
+
+
 # %% [markdown]
 # ## 分光感度（複数センサチャネル）　× ハイパスフィルタ × 放射波長
 
@@ -583,6 +586,10 @@ print(camera_response.shape)
 # ## カメラ出力空間
 
 # %%
+import numpy as np
+import plotly.graph_objs as go
+import gradio as gr
+
 def plot_sensor_response_2d(selected_peak):
     led_idx = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
 
@@ -610,7 +617,10 @@ def plot_sensor_response_2d(selected_peak):
 
     return fig
 
-# Gradio UI 更新
+peak_min = int(led_peak_wavelengths.min())
+peak_max = int(led_peak_wavelengths.max())
+step = int(np.min(np.diff(led_peak_wavelengths)))
+
 iface = gr.Interface(
     fn=plot_sensor_response_2d,
     inputs=gr.Slider(minimum=peak_min, maximum=peak_max, step=step, label="励起波長 [nm]", interactive=True),
@@ -630,25 +640,35 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import pdist
 
-# 分離度を格納するリスト
-separability_scores = []
+# 分離度の平均と標準偏差を格納するリスト
+separability_means = []
+separability_stds = []
 
-# 各励起波長（列）について分離度（ユークリッド距離の平均）を計算
+# 各励起波長（列）について分離度（ユークリッド距離の平均）とばらつきを計算
 for i in range(camera_response.shape[1]):
-    responses = camera_response[:, i].reshape(-1, 1)  # shape: (10, 1)
+    responses = camera_response[:, i].reshape(-1, 1)  # shape: (samples, 1)
     distances = pdist(responses, metric='euclidean')  # 全組み合わせの距離
-    separability_scores.append(np.mean(distances))
+    separability_means.append(np.mean(distances))
+    separability_stds.append(np.std(distances))      # 標準偏差を計算
 
-separability_scores = np.array(separability_scores)
+separability_means = np.array(separability_means)
+separability_stds = np.array(separability_stds)
 
 # 最も識別に優れる波長
-max_idx = np.argmax(separability_scores)
+max_idx = np.argmax(separability_means)
 best_wavelength = led_peak_wavelengths[max_idx]
-best_score = separability_scores[max_idx]
+best_score = separability_means[max_idx]
 
-# プロット
+# プロット（平均値＋標準偏差のエラーバー付き）
 plt.figure(figsize=(8, 5))
-plt.plot(led_peak_wavelengths, separability_scores, marker='o', label='Separability')
+plt.errorbar(
+    led_peak_wavelengths,
+    separability_means,
+    yerr=separability_stds,
+    fmt='-o',
+    capsize=5,
+    label='Separability (mean ± std)'
+)
 plt.axvline(best_wavelength, color='r', linestyle='--', label=f'Best Excitation: {best_wavelength:.0f} nm')
 plt.scatter(best_wavelength, best_score, color='red')
 
@@ -671,9 +691,10 @@ def plot_distance_matrix_uv(selected_wavelength):
     i = np.argmin(np.abs(led_peak_wavelengths - selected_wavelength))
     
     responses = camera_response[:, i].reshape(-1, 1)
-    responses_norm = (responses - np.mean(responses)) / np.std(responses)
+    # responses_norm = (responses - np.mean(responses)) / np.std(responses)
 
-    dist_vec = pdist(responses_norm, metric='euclidean')
+    dist_vec = pdist(responses, metric='euclidean')
+    # dist_vec = pdist(responses_norm, metric='euclidean')
     dist_mat = squareform(dist_vec)
 
     plt.figure(figsize=(8, 7))

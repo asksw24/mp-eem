@@ -703,24 +703,35 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import pdist
 
-# Separability (average Euclidean distance) calculation
-separability_scores = []
+# 分離度の平均と標準偏差を格納するリスト
+separability_means = []
+separability_stds = []
 
+# 各励起波長について分離度（ユークリッド距離の平均）とばらつきを計算
 for i in range(camera_rgb.shape[1]):
     rgb_vectors = camera_rgb[:, i, :]  # shape: (samples, 3)
     distances = pdist(rgb_vectors, metric='euclidean')
-    separability_scores.append(np.mean(distances))
+    separability_means.append(np.mean(distances))
+    separability_stds.append(np.std(distances))  # 標準偏差を計算
 
-separability_scores = np.array(separability_scores)
+separability_means = np.array(separability_means)
+separability_stds = np.array(separability_stds)
 
-# Find the best excitation wavelength
-max_idx = np.argmax(separability_scores)
+# 最も識別に優れる波長を取得
+max_idx = np.argmax(separability_means)
 best_wavelength = led_peak_wavelengths[max_idx]
-best_score = separability_scores[max_idx]
+best_score = separability_means[max_idx]
 
-# Plot
+# プロット（平均値＋標準偏差のエラーバー付き）
 plt.figure(figsize=(8, 5))
-plt.plot(led_peak_wavelengths, separability_scores, marker='o', label='Separability')
+plt.errorbar(
+    led_peak_wavelengths,
+    separability_means,
+    yerr=separability_stds,
+    fmt='-o',
+    capsize=5,
+    label='Separability (mean ± std)'
+)
 plt.axvline(best_wavelength, color='r', linestyle='--', label=f'Best Excitation: {best_wavelength:.0f} nm')
 plt.scatter(best_wavelength, best_score, color='red')
 
@@ -763,6 +774,28 @@ def plot_distance_matrix_rgb(selected_wavelength):
 
 # 使い方例
 plot_distance_matrix_rgb(250)
+
+
+# %%
+from scipy.spatial.distance import pdist
+
+separability_means = []
+separability_stds = []
+
+for i in range(camera_rgb.shape[1]):
+    rgb_vectors = camera_rgb[:, i, :]
+    distances = pdist(rgb_vectors, metric='euclidean')
+    separability_means.append(np.mean(distances))
+    separability_stds.append(np.std(distances))
+
+# 例えば励起波長ごとに平均と標準偏差をプロット
+plt.figure(figsize=(8,5))
+plt.errorbar(led_peak_wavelengths, separability_means, yerr=separability_stds, fmt='-o', capsize=5)
+plt.xlabel('Excitation Wavelength [nm]')
+plt.ylabel('Separability (Mean ± STD)')
+plt.title('Separability with Variance by Excitation Wavelength')
+plt.grid(True)
+plt.show()
 
 
 
