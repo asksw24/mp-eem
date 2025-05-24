@@ -545,9 +545,6 @@ plt.show()
 # %% [markdown]
 # # カメラ出力空間plot
 
-# %%
-
-
 # %% [markdown]
 # ## 分光感度（複数センサチャネル）　× ハイパスフィルタ × 放射波長
 
@@ -586,46 +583,44 @@ print(camera_response.shape)
 # ## カメラ出力空間
 
 # %%
-import numpy as np
-import plotly.graph_objs as go
-import gradio as gr
+# 改善案：事前計算 + live=False
+precomputed_response = {
+    int(wl): camera_response[:, i] for i, wl in enumerate(led_peak_wavelengths)
+}
 
-def plot_sensor_response_2d(selected_peak):
-    led_idx = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
+def plot_sensor_response_2d_fast(selected_peak):
+    selected_peak = int(selected_peak)
+    y_vals = precomputed_response.get(selected_peak, np.zeros_like(sample_names))
 
-    max_val = np.max(camera_response) * 1.1  # 応答値に応じたスケール固定
+    max_val = np.max(camera_response) * 1.1
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=sample_names,
-        y=camera_response[:, led_idx],
-        text=[f"{v:.2f}" for v in camera_response[:, led_idx]],
+        y=y_vals,
+        text=[f"{v:.2f}" for v in y_vals],
         textposition='auto',
         marker_color='gray'
     ))
 
     fig.update_layout(
-        title=f"センサ応答（励起波長 {led_peak_wavelengths[led_idx]:.0f} nm）",
+        title=f"センサ応答（励起波長 {selected_peak} nm）",
         xaxis_title="サンプル",
         yaxis_title="応答値",
         width=500,
         height=400,
         bargap=0.1,
         xaxis=dict(tickangle=-45),
-        yaxis=dict(range=[0, max_val])  # ← 固定スケール
+        yaxis=dict(range=[0, max_val])
     )
-
     return fig
 
-peak_min = int(led_peak_wavelengths.min())
-peak_max = int(led_peak_wavelengths.max())
-step = int(np.min(np.diff(led_peak_wavelengths)))
-
+# live=Falseに変更
 iface = gr.Interface(
-    fn=plot_sensor_response_2d,
-    inputs=gr.Slider(minimum=peak_min, maximum=peak_max, step=step, label="励起波長 [nm]", interactive=True),
+    fn=plot_sensor_response_2d_fast,
+    inputs=gr.Slider(minimum=peak_min, maximum=peak_max, step=step, label="励起波長 [nm]"),
     outputs=gr.Plot(label="モノクロセンサ応答（バーグラフ）"),
-    live=True,
+    live = True,
     title="センサ応答の可視化"
 )
 
@@ -713,6 +708,106 @@ def plot_distance_matrix_uv(selected_wavelength):
 
 # 使い方例
 plot_distance_matrix_uv(250)  # 365nmでの距離行列を表示
+
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import gradio as gr
+import plotly.express as px
+from scipy.spatial.distance import pdist, squareform
+import io
+from PIL import Image
+# import matplotlib.font_manager as fm
+
+# --- 事前準備済みの前提 ---
+# camera_response: (num_samples, num_wavelengths)
+# led_peak_wavelengths: (num_wavelengths,)
+# sample_names: (num_samples,)
+
+response_dict = {
+    int(wl): camera_response[:, i] for i, wl in enumerate(led_peak_wavelengths)
+}
+
+distance_matrices = {
+    int(wl): squareform(pdist(camera_response[:, i].reshape(-1, 1)))
+    for i, wl in enumerate(led_peak_wavelengths)
+}
+
+def plot_bar(wavelength):
+    y = response_dict.get(int(wavelength), np.zeros(len(sample_names)))
+    fig = px.bar(
+        x=sample_names,
+        y=y,
+        labels={"x": "サンプル", "y": "応答値"},
+        title=f"センサ応答（励起波長 {wavelength:.0f} nm）",
+        text=[f"{v:.2f}" for v in y]
+    )
+    fig.update_traces(marker_color="gray", textposition="outside")
+    fig.update_layout(
+        width=500,
+        height=400,
+        bargap=0.1,
+        xaxis_tickangle=-45,
+        yaxis_range=[0, np.max(camera_response) * 1.1]
+    )
+    return fig
+
+def plot_heatmap(wavelength):
+    dist = distance_matrices.get(int(wavelength))
+    if dist is None:
+        print(f"距離行列が見つかりません: {wavelength}")
+        return None
+
+    # 全距離行列の値からスケール固定のためのmin/maxを取得
+    all_values = np.concatenate([v.flatten() for v in distance_matrices.values()])
+    vmin = all_values.min()
+    vmax = all_values.max()
+
+    # 下三角 + 対角成分をマスク（Trueの部分は非表示になる）
+    mask = np.tril(np.ones_like(dist, dtype=bool))
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    sns.heatmap(
+        dist,
+        mask=mask,
+        cmap='viridis',
+        xticklabels=sample_names,
+        yticklabels=sample_names,
+        vmin=vmin,
+        vmax=vmax,
+        cbar=True,
+        square=True,
+        annot=False,  # 数値は表示しない
+        ax=ax
+    )
+
+    ax.set_title(f"Distance Matrix(Excitation {wavelength:.0f} nm)")
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close(fig)
+    buf.seek(0)
+    return Image.open(buf)
+
+peak_min = int(led_peak_wavelengths.min())
+peak_max = int(led_peak_wavelengths.max())
+step = int(np.min(np.diff(led_peak_wavelengths)))
+
+with gr.Blocks(title="センサ応答と距離行列の同時可視化") as demo:
+    gr.Markdown("### 励起波長を選択して、センサ応答と距離行列を同時に確認")
+    slider = gr.Slider(peak_min, peak_max, step=step, label="励起波長 [nm]", interactive=True)
+
+    with gr.Row():
+        bar_output = gr.Plot(label="センサ応答バーグラフ")
+        heatmap_output = gr.Image(type="pil", label="距離行列ヒートマップ")
+
+    slider.change(fn=plot_bar, inputs=slider, outputs=bar_output)
+    slider.change(fn=plot_heatmap, inputs=slider, outputs=heatmap_output)
+
+demo.launch()
 
 
 
