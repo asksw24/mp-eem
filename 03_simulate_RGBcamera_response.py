@@ -488,63 +488,64 @@ print(camera_signals.shape)
 
 
 # %%
-# import numpy as np
-# import matplotlib.pyplot as plt
+import numpy as np
+import matplotlib.pyplot as plt
+# plt.use('TkAgg')  # または 'Qt5Agg', 'WebAgg' など
 
-# # === サンプル名の取得 ===
-# sample_names = []
-# for data in srcdata:
-#     eem = fluorescence_util.EEMF7000(data.get('path'))
-#     sample_names.append(eem.sample)
+# === サンプル名の取得 ===
+sample_names = []
+for data in srcdata:
+    eem = fluorescence_util.EEMF7000(data.get('path'))
+    sample_names.append(eem.sample)
 
-# # === 波長定義 ===
-# ex_wavelengths = np.linspace(200, 600, spds_fill.shape[0])  # 励起波長
-# em_wavelengths = np.linspace(200, 600, fluorescence.shape[2])  # 放射波長
+# === 波長定義 ===
+ex_wavelengths = np.linspace(200, 600, spds_fill.shape[0])  # 励起波長
+em_wavelengths = np.linspace(200, 600, fluorescence.shape[2])  # 放射波長
 
-# # === 各LEDのピーク波長取得 ===
-# led_peak_wavelengths = ex_wavelengths[np.argmax(spds_fill, axis=0)]
+# === 各LEDのピーク波長取得 ===
+wl_peeks = ex_wavelengths[np.argmax(spds_fill, axis=0)]
 
-# # === 任意指定（表示するサンプル・LED波長）===
-# sample_name = 'ABS'
-# sample_idx = sample_names.index(sample_name)
-# desired_peak_wavelength = 280
-# led_idx = np.argmin(np.abs(led_peak_wavelengths - desired_peak_wavelength))
-# print(f"Selected LED {led_idx} with peak wavelength {led_peak_wavelengths[led_idx]:.1f} nm")
+# === 任意指定（表示するサンプル・LED波長）===
+sample_name = 'ABS'
+sample_idx = sample_names.index(sample_name)
+desired_peak_wavelength = 280
+led_idx = np.argmin(np.abs(wl_peeks - desired_peak_wavelength))
+print(f"Selected LED {led_idx} with peak wavelength {wl_peeks[led_idx]:.1f} nm")
 
-# # === 該当サンプル・LEDの蛍光スペクトルとLED SPD・カメラ感度取得 ===
-# fluor = fluorescence[sample_idx, led_idx]  # shape: (81,)
-# led_spd = spds_fill[:, led_idx]           # shape: (81,)
-# cam_resp = fluor * effective_camera_sens[:, led_idx]     # 蛍光 × カメラ感度
-# cam_sens = camera_sensitivity             # shape: (81,)
+# === 該当サンプル・LEDの蛍光スペクトルとLED SPD・カメラ感度取得 ===
+fluor = fluorescence[sample_idx, led_idx]  # shape: (81,)
+led_spd = spds_fill[:, led_idx]           # shape: (81,)
+cam_resp = fluor * effective_camera_sens[:, led_idx]     # 蛍光 × カメラ感度
+cam_sens = RGB_camera_sensitivity             # shape: (81,)
 
 
-# # === ハイパスフィルタ情報 ===
-# hp_curve = hp_filter_matrix[:, led_idx]  # shape: (81,)
-# cutoff = cutoff_list[led_idx]
+# === ハイパスフィルタ情報 ===
+hp_curve = hp_filter_matrix[:, led_idx]  # shape: (81,)
+cutoff = cutoff_list[led_idx]
 
-# # === プロット ===
-# fig, ax1 = plt.subplots(figsize=(10, 5))
+# === プロット ===
+fig, ax1 = plt.subplots(figsize=(10, 5))
 
-# # 左軸：蛍光スペクトル・カメラ応答
-# ax1.plot(em_wavelengths, fluor, label='Fluorescence', color='green', linestyle='--')
-# ax1.plot(em_wavelengths, cam_resp, label='Camera Response (Fluorescence × Sensitivity)', color='blue')
-# ax1.set_xlabel('Wavelength [nm]')
-# ax1.set_ylabel('Intensity (Fluorescence / Camera Response)')
-# ax1.grid(True)
-# ax1.legend(loc='upper left')
+# 左軸：蛍光スペクトル・カメラ応答
+ax1.plot(em_wavelengths, fluor, label='Fluorescence', color='green', linestyle='--')
+ax1.plot(em_wavelengths, cam_resp, label='Camera Response (Fluorescence × Sensitivity)', color='blue')
+ax1.set_xlabel('Wavelength [nm]')
+ax1.set_ylabel('Intensity (Fluorescence / Camera Response)')
+ax1.grid(True)
+ax1.legend(loc='upper left')
 
-# # 右軸：LED SPD・カメラ感度・ハイパスフィルタ
-# ax2 = ax1.twinx()
-# ax2.plot(ex_wavelengths, led_spd, 'r--', alpha=0.6, label='LED SPD')
-# ax2.plot(em_wavelengths, cam_sens, 'm:', alpha=0.7, label='Camera Sensitivity')
-# ax2.plot(em_wavelengths, hp_curve, color='orange', linestyle='-', alpha=0.7, label='High-pass Filter')
-# ax2.axvline(cutoff, color='orange', linestyle='dotted', linewidth=2, label=f'Cutoff = {cutoff:.1f} nm')
-# ax2.set_ylabel('LED SPD / Camera Sensitivity / HP Filter')
-# ax2.legend(loc='upper right')
+# 右軸：LED SPD・カメラ感度・ハイパスフィルタ
+ax2 = ax1.twinx()
+ax2.plot(ex_wavelengths, led_spd, 'r--', alpha=0.6, label='LED SPD')
+ax2.plot(em_wavelengths, cam_sens, 'm:', alpha=0.7, label='Camera Sensitivity')
+ax2.plot(em_wavelengths, hp_curve, color='orange', linestyle='-', alpha=0.7, label='High-pass Filter')
+ax2.axvline(cutoff, color='orange', linestyle='dotted', linewidth=2, label=f'Cutoff = {cutoff:.1f} nm')
+ax2.set_ylabel('LED SPD / Camera Sensitivity / HP Filter')
+ax2.legend(loc='upper right')
 
-# plt.title(f'Sample: {sample_name}, LED Peak: {led_peak_wavelengths[led_idx]:.1f} nm')
-# plt.tight_layout()
-# plt.show()
+plt.title(f'Sample: {sample_name}, LED Peak: {wl_peeks[led_idx]:.1f} nm')
+plt.tight_layout()
+plt.show()
 
 
 # %% [markdown]
@@ -629,6 +630,11 @@ plot_sensor_led_filter(
 # ## カメラ出力空間・分離度
 
 # %%
+wl_peeks
+sample_names
+
+
+# %%
 import numpy as np
 import plotly.graph_objs as go
 import gradio as gr
@@ -640,8 +646,14 @@ from PIL import Image
 
 # --- 事前定義前提 ---
 # camera_rgb: shape = (num_samples, num_wavelengths, 3)
-# led_peak_wavelengths: shape = (num_wavelengths,)
+# wl_peeks: shape = (num_wavelengths,)
 # sample_names: list[str] or np.array
+
+# === サンプル名の取得 ===
+sample_names = []
+for data in srcdata:
+    eem = fluorescence_util.EEMF7000(data.get('path'))
+    sample_names.append(eem.sample)
 
 # RGB軸のスケーリング
 all_R = camera_rgb[:, :, 0]
@@ -654,7 +666,7 @@ margin = (global_max - global_min) * 0.1
 axis_range = [global_min - margin, global_max + margin]
 
 def plot_rgb_by_excitation(selected_peak):
-    led_idx = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
+    led_idx = int(np.argmin(np.abs(wl_peeks - selected_peak)))
     fig = go.Figure()
 
     for s, name in enumerate(sample_names):
@@ -680,13 +692,13 @@ def plot_rgb_by_excitation(selected_peak):
             aspectratio=dict(x=1, y=1, z=1),
             camera=dict(eye=dict(x=2.0, y=-2.0, z=1.0))
         ),
-        title=f"RGB Responses at Excitation Peak {led_peak_wavelengths[led_idx]:.0f} nm"
+        title=f"RGB Responses at Excitation Peak {wl_peeks[led_idx]:.0f} nm"
     )
 
     return fig
 
 def plot_rgb_distance_heatmap(selected_peak):
-    led_idx = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
+    led_idx = int(np.argmin(np.abs(wl_peeks - selected_peak)))
     rgb_vectors = camera_rgb[:, led_idx, :]  # shape = (num_samples, 3)
     dist_matrix = squareform(pdist(rgb_vectors, metric="euclidean"))
 
@@ -715,7 +727,7 @@ def plot_rgb_distance_heatmap(selected_peak):
         annot=False,
         ax=ax
     )
-    ax.set_title(f"RGB Distance Matrix (Excitation {led_peak_wavelengths[led_idx]:.0f} nm)")
+    ax.set_title(f"RGB Distance Matrix (Excitation {wl_peeks[led_idx]:.0f} nm)")
     plt.tight_layout()
 
     buf = io.BytesIO()
@@ -725,9 +737,9 @@ def plot_rgb_distance_heatmap(selected_peak):
     return Image.open(buf)
 
 # Gradio UI: Sliderで両方出力
-peak_min = int(led_peak_wavelengths.min())
-peak_max = int(led_peak_wavelengths.max())
-step = int(np.min(np.diff(led_peak_wavelengths)))
+peak_min = int(wl_peeks.min())
+peak_max = int(wl_peeks.max())
+step = int(np.min(np.diff(wl_peeks)))
 
 with gr.Blocks(title="RGBセンサ応答と距離行列の同時可視化") as demo:
     gr.Markdown("### 励起波長を選択して、RGBセンサ応答と距離行列を同時に表示")
@@ -747,69 +759,157 @@ demo.launch()
 # %%
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.spatial.distance import pdist
+import plotly.graph_objs as go
+import seaborn as sns
+from scipy.spatial.distance import pdist, squareform
+import io
+from PIL import Image
+import gradio as gr
 
-# 分離度の平均と標準偏差を格納するリスト
-separability_means = []
-separability_stds = []
+# --- ここに既存のデータ読み込みと前準備がある前提 ---
+# sample_names, wl_peeks, fluorescence, spds_fill, RGB_camera_sensitivity, effective_camera_sens, hp_filter_matrix, cutoff_list, camera_rgb
 
-# 各励起波長について分離度（ユークリッド距離の平均）とばらつきを計算
-for i in range(camera_rgb.shape[1]):
-    rgb_vectors = camera_rgb[:, i, :]  # shape: (samples, 3)
-    distances = pdist(rgb_vectors, metric='euclidean')
-    separability_means.append(np.mean(distances))
-    separability_stds.append(np.std(distances))  # 標準偏差を計算
+# --- 蛍光スペクトル可視化（matplotlib→PIL Image） ---
+def plot_spectra(sample_name, desired_peak_wavelength):
+    sample_idx = sample_names.index(sample_name)
+    led_idx = np.argmin(np.abs(wl_peeks - desired_peak_wavelength))
 
-separability_means = np.array(separability_means)
-separability_stds = np.array(separability_stds)
+    fluor = fluorescence[sample_idx, led_idx]
+    led_spd = spds_fill[:, led_idx]
+    cam_sens = RGB_camera_sensitivity
+    cam_resp = fluor * effective_camera_sens[:, led_idx]
+    hp_curve = hp_filter_matrix[:, led_idx]
+    cutoff = cutoff_list[led_idx]
 
-# 最も識別に優れる波長を取得
-max_idx = np.argmax(separability_means)
-best_wavelength = led_peak_wavelengths[max_idx]
-best_score = separability_means[max_idx]
+    em_wavelengths = np.linspace(200, 600, fluorescence.shape[2])
+    ex_wavelengths = np.linspace(200, 600, spds_fill.shape[0])
 
-# プロット（平均値＋標準偏差のエラーバー付き）
-plt.figure(figsize=(8, 5))
-plt.errorbar(
-    led_peak_wavelengths,
-    separability_means,
-    yerr=separability_stds,
-    fmt='-o',
-    capsize=5,
-    label='Separability (mean ± std)'
-)
-plt.axvline(best_wavelength, color='r', linestyle='--', label=f'Best Excitation: {best_wavelength:.0f} nm')
-plt.scatter(best_wavelength, best_score, color='red')
+    fig, ax1 = plt.subplots(figsize=(8, 4))
+    ax1.plot(em_wavelengths, fluor, label='Fluorescence', color='green', linestyle='--')
+    ax1.plot(em_wavelengths, cam_resp, label='Camera Response (Fluor × Sens)', color='blue')
+    ax1.set_xlabel('Wavelength [nm]')
+    ax1.set_ylabel('Intensity')
+    ax1.grid(True)
+    ax1.legend(loc='upper left')
 
-plt.title('Separability by Excitation Wavelength (RGB Camera)')
-plt.xlabel('Excitation Wavelength [nm]')
-plt.ylabel('Separability')
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-plt.show()
+    ax2 = ax1.twinx()
+    ax2.plot(ex_wavelengths, led_spd, 'r--', alpha=0.6, label='LED SPD')
+    ax2.plot(em_wavelengths, cam_sens, 'm:', alpha=0.7, label='Camera Sensitivity')
+    ax2.plot(em_wavelengths, hp_curve, color='orange', linestyle='-', alpha=0.7, label='High-pass Filter')
+    ax2.axvline(cutoff, color='orange', linestyle='dotted', linewidth=2, label=f'Cutoff = {cutoff:.1f} nm')
+    ax2.set_ylabel('SPD / Sensitivity / Filter')
+    ax2.legend(loc='upper right')
 
+    plt.title(f'Sample: {sample_name}, LED Peak: {wl_peeks[led_idx]:.1f} nm')
+    plt.tight_layout()
 
-# %%
-from scipy.spatial.distance import pdist
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close(fig)
+    buf.seek(0)
+    return Image.open(buf)
 
-separability_means = []
-separability_stds = []
+# --- RGB 3Dプロット ---
+def plot_rgb_by_excitation(selected_peak):
+    led_idx = int(np.argmin(np.abs(wl_peeks - selected_peak)))
+    fig = go.Figure()
 
-for i in range(camera_rgb.shape[1]):
-    rgb_vectors = camera_rgb[:, i, :]
-    distances = pdist(rgb_vectors, metric='euclidean')
-    separability_means.append(np.mean(distances))
-    separability_stds.append(np.std(distances))
+    for s, name in enumerate(sample_names):
+        R, G, B = camera_rgb[s, led_idx]
+        fig.add_trace(go.Scatter3d(
+            x=[R], y=[G], z=[B],
+            mode='markers+text',
+            marker=dict(size=6),
+            text=[name],
+            textposition="top center",
+            name=name
+        ))
 
-# 例えば励起波長ごとに平均と標準偏差をプロット
-plt.figure(figsize=(8,5))
-plt.errorbar(led_peak_wavelengths, separability_means, yerr=separability_stds, fmt='-o', capsize=5)
-plt.xlabel('Excitation Wavelength [nm]')
-plt.ylabel('Separability (Mean ± STD)')
-plt.title('Separability with Variance by Excitation Wavelength')
-plt.grid(True)
-plt.show()
+    all_R = camera_rgb[:, :, 0]
+    all_G = camera_rgb[:, :, 1]
+    all_B = camera_rgb[:, :, 2]
+
+    global_min = min(all_R.min(), all_G.min(), all_B.min())
+    global_max = max(all_R.max(), all_G.max(), all_B.max())
+    margin = (global_max - global_min) * 0.1
+    axis_range = [global_min - margin, global_max + margin]
+
+    fig.update_layout(
+        width=450,
+        height=400,
+        margin=dict(l=20, r=20, t=50, b=20),
+        scene=dict(
+            xaxis=dict(title='Red', range=axis_range),
+            yaxis=dict(title='Green', range=axis_range),
+            zaxis=dict(title='Blue', range=axis_range),
+            aspectmode="manual",
+            aspectratio=dict(x=1, y=1, z=1),
+            camera=dict(eye=dict(x=2.0, y=-2.0, z=1.0))
+        ),
+        title=f"RGB Responses at Excitation Peak {wl_peeks[led_idx]:.0f} nm"
+    )
+
+    return fig
+
+# --- RGB距離ヒートマップ ---
+def plot_rgb_distance_heatmap(selected_peak):
+    led_idx = int(np.argmin(np.abs(wl_peeks - selected_peak)))
+    rgb_vectors = camera_rgb[:, led_idx, :]
+    dist_matrix = squareform(pdist(rgb_vectors, metric="euclidean"))
+
+    all_dists = []
+    for i in range(camera_rgb.shape[1]):
+        d = squareform(pdist(camera_rgb[:, i, :]))
+        all_dists.append(d)
+    vmin = np.min(all_dists)
+    vmax = np.max(all_dists)
+
+    mask = np.tril(np.ones_like(dist_matrix, dtype=bool))
+
+    fig, ax = plt.subplots(figsize=(5, 4))
+    sns.heatmap(dist_matrix, mask=mask, cmap='viridis',
+                xticklabels=sample_names, yticklabels=sample_names,
+                vmin=vmin, vmax=vmax, square=True, cbar=True, ax=ax)
+    ax.set_title(f"RGB Distance Matrix (Excitation {wl_peeks[led_idx]:.0f} nm)")
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close(fig)
+    buf.seek(0)
+    return Image.open(buf)
+
+# --- 統合UI構築 ---
+def update_all(sample_name, peak_nm):
+    # 蛍光スペクトル画像
+    spectrum_img = plot_spectra(sample_name, peak_nm)
+    # RGB 3Dプロット
+    rgb_fig = plot_rgb_by_excitation(peak_nm)
+    # 距離ヒートマップ画像
+    dist_img = plot_rgb_distance_heatmap(peak_nm)
+    return spectrum_img, rgb_fig, dist_img
+
+with gr.Blocks() as demo:
+    gr.Markdown("## 蛍光スペクトル・RGB応答・距離行列の統合可視化")
+
+    with gr.Row():
+        with gr.Column(scale=1):
+            sample_dropdown = gr.Dropdown(choices=sample_names, value=sample_names[0], label="サンプル選択")
+            peak_slider = gr.Slider(minimum=wl_peeks.min(), maximum=wl_peeks.max(),
+                                   step=1, value=wl_peeks[0], label="励起波長 (LEDピーク) [nm]")
+            spectrum_img = gr.Image(label="蛍光スペクトル")
+
+        with gr.Column(scale=1):
+            rgb_3d_plot = gr.Plot(label="RGB 3Dプロット")
+            distance_heatmap = gr.Image(label="RGB距離行列ヒートマップ")
+
+    # sample_name or peak_sliderが変わったらまとめて更新
+    sample_dropdown.change(fn=update_all, inputs=[sample_dropdown, peak_slider],
+                           outputs=[spectrum_img, rgb_3d_plot, distance_heatmap])
+    peak_slider.change(fn=update_all, inputs=[sample_dropdown, peak_slider],
+                       outputs=[spectrum_img, rgb_3d_plot, distance_heatmap])
+
+demo.launch()
 
 
 

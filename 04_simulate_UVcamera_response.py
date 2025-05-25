@@ -580,135 +580,7 @@ print(camera_response.shape)
 
 
 # %% [markdown]
-# ## カメラ出力空間
-
-# %%
-# 改善案：事前計算 + live=False
-precomputed_response = {
-    int(wl): camera_response[:, i] for i, wl in enumerate(led_peak_wavelengths)
-}
-
-def plot_sensor_response_2d_fast(selected_peak):
-    selected_peak = int(selected_peak)
-    y_vals = precomputed_response.get(selected_peak, np.zeros_like(sample_names))
-
-    max_val = np.max(camera_response) * 1.1
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=sample_names,
-        y=y_vals,
-        text=[f"{v:.2f}" for v in y_vals],
-        textposition='auto',
-        marker_color='gray'
-    ))
-
-    fig.update_layout(
-        title=f"センサ応答（励起波長 {selected_peak} nm）",
-        xaxis_title="サンプル",
-        yaxis_title="応答値",
-        width=500,
-        height=400,
-        bargap=0.1,
-        xaxis=dict(tickangle=-45),
-        yaxis=dict(range=[0, max_val])
-    )
-    return fig
-
-# live=Falseに変更
-iface = gr.Interface(
-    fn=plot_sensor_response_2d_fast,
-    inputs=gr.Slider(minimum=peak_min, maximum=peak_max, step=step, label="励起波長 [nm]"),
-    outputs=gr.Plot(label="モノクロセンサ応答（バーグラフ）"),
-    live = True,
-    title="センサ応答の可視化"
-)
-
-iface.launch()
-
-
-# %% [markdown]
-# ## 分離度
-
-# %%
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.spatial.distance import pdist
-
-# 分離度の平均と標準偏差を格納するリスト
-separability_means = []
-separability_stds = []
-
-# 各励起波長（列）について分離度（ユークリッド距離の平均）とばらつきを計算
-for i in range(camera_response.shape[1]):
-    responses = camera_response[:, i].reshape(-1, 1)  # shape: (samples, 1)
-    distances = pdist(responses, metric='euclidean')  # 全組み合わせの距離
-    separability_means.append(np.mean(distances))
-    separability_stds.append(np.std(distances))      # 標準偏差を計算
-
-separability_means = np.array(separability_means)
-separability_stds = np.array(separability_stds)
-
-# 最も識別に優れる波長
-max_idx = np.argmax(separability_means)
-best_wavelength = led_peak_wavelengths[max_idx]
-best_score = separability_means[max_idx]
-
-# プロット（平均値＋標準偏差のエラーバー付き）
-plt.figure(figsize=(8, 5))
-plt.errorbar(
-    led_peak_wavelengths,
-    separability_means,
-    yerr=separability_stds,
-    fmt='-o',
-    capsize=5,
-    label='Separability (mean ± std)'
-)
-plt.axvline(best_wavelength, color='r', linestyle='--', label=f'Best Excitation: {best_wavelength:.0f} nm')
-plt.scatter(best_wavelength, best_score, color='red')
-
-plt.title('Separability by Excitation Wavelength (1-Channel UV Camera)')
-plt.xlabel('Excitation Wavelength [nm]')
-plt.ylabel('Separability')
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-plt.show()
-
-
-# %%
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.spatial.distance import squareform, pdist
-
-def plot_distance_matrix_uv(selected_wavelength):
-    # 波長に最も近いインデックスを探す
-    i = np.argmin(np.abs(led_peak_wavelengths - selected_wavelength))
-    
-    responses = camera_response[:, i].reshape(-1, 1)
-    # responses_norm = (responses - np.mean(responses)) / np.std(responses)
-
-    dist_vec = pdist(responses, metric='euclidean')
-    # dist_vec = pdist(responses_norm, metric='euclidean')
-    dist_mat = squareform(dist_vec)
-
-    plt.figure(figsize=(8, 7))
-    im = plt.imshow(dist_mat, cmap='viridis')
-    plt.colorbar(im, label='Euclidean Distance')
-
-    plt.title(f'Sample Distance Matrix (UV) at {led_peak_wavelengths[i]:.0f} nm')
-
-    plt.xticks(ticks=np.arange(len(sample_names)), labels=sample_names, rotation=45, ha='right')
-    plt.yticks(ticks=np.arange(len(sample_names)), labels=sample_names)
-    plt.xlabel('Sample')
-    plt.ylabel('Sample')
-
-    plt.tight_layout()
-    plt.show()
-
-# 使い方例
-plot_distance_matrix_uv(250)  # 365nmでの距離行列を表示
-
+# ## カメラ出力空間・距離行列
 
 # %%
 import numpy as np
@@ -806,6 +678,157 @@ with gr.Blocks(title="センサ応答と距離行列の同時可視化") as demo
 
     slider.change(fn=plot_bar, inputs=slider, outputs=bar_output)
     slider.change(fn=plot_heatmap, inputs=slider, outputs=heatmap_output)
+
+demo.launch()
+
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import gradio as gr
+import plotly.express as px
+from scipy.spatial.distance import pdist, squareform
+import io
+from PIL import Image
+
+# --- 事前準備済みの前提 ---
+# sample_names: list[str] （サンプル名リスト）
+# led_peak_wavelengths: np.ndarray (num_leds,) LEDピーク波長
+# fluorescence: np.ndarray (num_samples, num_leds, num_em_wavelengths) 蛍光スペクトル
+# spds_fill: np.ndarray (num_ex_wavelengths, num_leds) LED SPD
+# effective_camera_sens: np.ndarray (num_em_wavelengths, num_leds) カメラ感度（励起LEDごと）
+# camera_sensitivity: np.ndarray (num_em_wavelengths,) カメラ感度（全体）
+# hp_filter_matrix: np.ndarray (num_em_wavelengths, num_leds) ハイパスフィルタ
+# cutoff_list: list or np.ndarray (num_leds,) カットオフ波長
+# camera_response: np.ndarray (num_samples, num_leds) センサ応答（例:蛍光×感度積分値）
+
+ex_wavelengths = np.linspace(200, 600, spds_fill.shape[0])     # 励起波長（SPD波長軸）
+em_wavelengths = np.linspace(200, 600, fluorescence.shape[2])   # 放射波長（蛍光波長軸）
+
+# 応答辞書と距離行列辞書作成
+response_dict = {int(wl): camera_response[:, i] for i, wl in enumerate(led_peak_wavelengths)}
+distance_matrices = {
+    int(wl): squareform(pdist(camera_response[:, i].reshape(-1, 1))) for i, wl in enumerate(led_peak_wavelengths)
+}
+
+def plot_fluorescence_plot(sample_name, desired_peak_wavelength):
+    sample_idx = sample_names.index(sample_name)
+    led_idx = np.argmin(np.abs(led_peak_wavelengths - desired_peak_wavelength))
+
+    fluor = fluorescence[sample_idx, led_idx]                   # 蛍光スペクトル
+    led_spd = spds_fill[:, led_idx]                             # LED SPD
+    cam_resp = fluor * effective_camera_sens[:, led_idx]        # 蛍光 × 感度
+    cam_sens = camera_sensitivity                                # カメラ感度
+    hp_curve = hp_filter_matrix[:, led_idx]                      # ハイパスフィルタ
+    cutoff = cutoff_list[led_idx]
+
+    fig, ax1 = plt.subplots(figsize=(8, 4.5))
+
+    ax1.plot(em_wavelengths, fluor, label='Fluorescence', color='green', linestyle='--')
+    ax1.plot(em_wavelengths, cam_resp, label='Camera Response (Fluor × Sens)', color='blue')
+    ax1.set_xlabel('Wavelength [nm]')
+    ax1.set_ylabel('Intensity (Fluorescence / Camera Response)')
+    ax1.grid(True)
+    ax1.legend(loc='upper left')
+
+    ax2 = ax1.twinx()
+    ax2.plot(ex_wavelengths, led_spd, 'r--', alpha=0.6, label='LED SPD')
+    ax2.plot(em_wavelengths, cam_sens, 'm:', alpha=0.7, label='Camera Sensitivity')
+    ax2.plot(em_wavelengths, hp_curve, color='orange', linestyle='-', alpha=0.7, label='High-pass Filter')
+    ax2.axvline(cutoff, color='orange', linestyle='dotted', linewidth=2, label=f'Cutoff = {cutoff:.1f} nm')
+    ax2.set_ylabel('LED SPD / Camera Sensitivity / HP Filter')
+    ax2.legend(loc='upper right')
+
+    plt.title(f'Sample: {sample_name}, LED Peak: {led_peak_wavelengths[led_idx]:.1f} nm')
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close(fig)
+    buf.seek(0)
+    return Image.open(buf)
+
+
+def plot_bar(wavelength):
+    y = response_dict.get(int(wavelength), np.zeros(len(sample_names)))
+    fig = px.bar(
+        x=sample_names,
+        y=y,
+        labels={"x": "サンプル", "y": "応答値"},
+        title=f"センサ応答（励起波長 {wavelength:.0f} nm）",
+        text=[f"{v:.2f}" for v in y]
+    )
+    fig.update_traces(marker_color="gray", textposition="outside")
+    fig.update_layout(
+        width=450,
+        height=350,
+        bargap=0.1,
+        xaxis_tickangle=-45,
+        yaxis_range=[0, np.max(camera_response) * 1.1]
+    )
+    return fig
+
+
+def plot_heatmap(wavelength):
+    dist = distance_matrices.get(int(wavelength))
+    if dist is None:
+        return None
+
+    all_values = np.concatenate([v.flatten() for v in distance_matrices.values()])
+    vmin = all_values.min()
+    vmax = all_values.max()
+    mask = np.tril(np.ones_like(dist, dtype=bool))
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    sns.heatmap(
+        dist,
+        mask=mask,
+        cmap='viridis',
+        xticklabels=sample_names,
+        yticklabels=sample_names,
+        vmin=vmin,
+        vmax=vmax,
+        cbar=True,
+        square=True,
+        annot=False,
+        ax=ax
+    )
+    ax.set_title(f"Distance Matrix (Excitation {wavelength:.0f} nm)")
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close(fig)
+    buf.seek(0)
+    return Image.open(buf)
+
+
+peak_min = int(led_peak_wavelengths.min())
+peak_max = int(led_peak_wavelengths.max())
+step = int(np.min(np.diff(led_peak_wavelengths)))
+
+with gr.Blocks(title="蛍光スペクトルとセンサ応答の統合可視化") as demo:
+    gr.Markdown("### サンプル選択と励起波長を選択し、蛍光スペクトル・センサ応答・距離行列を確認")
+
+    with gr.Row():
+        sample_dropdown = gr.Dropdown(choices=sample_names, value=sample_names[0], label="サンプル選択")
+        peak_slider = gr.Slider(peak_min, peak_max, step=step, value=peak_min, label="励起波長 [nm]")
+
+    with gr.Row():
+        fluorescence_img = gr.Image(label="蛍光スペクトル・SPD・カメラ感度・フィルタ")
+        bar_plot = gr.Plot(label="センサ応答バーグラフ")
+
+    heatmap_img = gr.Image(label="距離行列ヒートマップ", type="pil")
+
+    def update_all(sample_name, peak_wl):
+        img = plot_fluorescence_plot(sample_name, peak_wl)
+        bar = plot_bar(peak_wl)
+        heat = plot_heatmap(peak_wl)
+        return img, bar, heat
+
+    sample_dropdown.change(fn=update_all, inputs=[sample_dropdown, peak_slider], outputs=[fluorescence_img, bar_plot, heatmap_img])
+    peak_slider.change(fn=update_all, inputs=[sample_dropdown, peak_slider], outputs=[fluorescence_img, bar_plot, heatmap_img])
 
 demo.launch()
 
