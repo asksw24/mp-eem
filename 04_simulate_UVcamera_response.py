@@ -154,34 +154,51 @@ for data in srcdata:
     print(eem)
 
     plt.figure()
-    # eem.plot_contour(level=100, show_sample_name=True)
 
-    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6, inplace=True, )
+    # ① 散乱ピーク除去
+    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6,
+                                                       remove_first_order=True, 
+                                                       inplace=True)
+
+    # ② 追加で散乱領域全体を除去
+    eem.remove_scatter_regions(inplace=True)
+
     eem.plot_heatmap()
-
     plt.title(eem.sample)
-
 
 
 # %%
 sample_data = []
 
 for data in srcdata:
+
     eem = fluorescence_util.EEMF7000(data.get('path'))
     print(eem)
 
-    # plt.figure()
-    # eem.plot_contour(level=100, show_sample_name=True)
+    plt.figure()
 
-    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=0, inplace=True, )
-    
-    eem_matrix = eem.mat
-    # eem_df = eem.eem_df
-    
+    # ①散乱ピーク除去
+    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=5,
+                                                       remove_first_order=False,
+                                                        inplace=True)
+
+    # ②追加で散乱領域全体を除去
+    eem.remove_scatter_regions_lowerright(inplace=True)
+
+    # nan を 0 に置換
+    eem.eem_df = eem.eem_df.fillna(0)
+
+    eem.plot_heatmap()
+    plt.title(eem.sample)
+
+
+    eem_matrix = eem.mat  # numpy配列を取り出す
+    eem_matrix = np.nan_to_num(eem_matrix, nan=0.0)  # nanを0に置換
     # サンプルごとにnumpy配列に追加
     sample_data.append(eem_matrix)
 
     print(eem_matrix)
+
 
 # numpy配列に保存
 eem_array = np.array(sample_data)
@@ -381,7 +398,7 @@ def generate_cutoff_list(peak_wavelengths, fwhm, margin_step, step):
     
     return cutoff_list
 
-cutoff_list = generate_cutoff_list(wl_peeks, fwhm=50, margin_step=6, step=5)
+cutoff_list = generate_cutoff_list(wl_peeks, fwhm=45, margin_step=5, step=1)
 # cutoff_list の長さは spds_fillの列数と一致させる
 if len(cutoff_list) != spds_fill.shape[1]:
     raise ValueError("cutoff_list length must match number of LEDs")
