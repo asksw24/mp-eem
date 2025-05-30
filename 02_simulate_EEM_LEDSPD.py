@@ -27,7 +27,8 @@ from fluorescence_util import *
 # 'flux-onBoard.xlsx'
 # 'lead_noFlux.xlsx'
 
-srcbase = Path("./data/EEM_F-7000_2025-04-11/")
+# srcbase = Path("./data/EEM_F-7000_2025-04-11/")
+srcbase = Path("./EEM_F-7000-2025-05-29/")
 dstdir = Path("./dst/eem/filter")
 
 srcdata = [

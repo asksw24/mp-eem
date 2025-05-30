@@ -27,7 +27,8 @@ from fluorescence_util import *
 # 'flux-onBoard.xlsx'
 # 'lead_noFlux.xlsx'
 
-srcbase = Path("./data/EEM_F-7000_2025-04-11/")
+# srcbase = Path("./data/EEM_F-7000_2025-04-11/")
+srcbase = Path("./data/EEM_F-7000_2025-05-29/")
 dstdir = Path("./dst/eem/filter")
 
 srcdata = [
@@ -506,7 +507,7 @@ em_wavelengths = np.linspace(200, 600, fluorescence.shape[2])  # 放射波長
 wl_peeks = ex_wavelengths[np.argmax(spds_fill, axis=0)]
 
 # === 任意指定（表示するサンプル・LED波長）===
-sample_name = 'ABS'
+sample_name = 'PET'
 sample_idx = sample_names.index(sample_name)
 desired_peak_wavelength = 280
 led_idx = np.argmin(np.abs(wl_peeks - desired_peak_wavelength))
