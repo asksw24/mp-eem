@@ -27,7 +27,8 @@ from fluorescence_util import *
 # 'flux-onBoard.xlsx'
 # 'lead_noFlux.xlsx'
 
-srcbase = Path("./data/EEM_F-7000_2025-04-11/")
+# srcbase = Path("./data/EEM_F-7000_2025-04-11/")
+srcbase = Path("./data/EEM_F-7000_2025-05-29/")
 dstdir = Path("./dst/eem/filter")
 
 srcdata = [
@@ -138,44 +139,32 @@ plt.imshow(_df[eem.ex_bands].values)
 # _df.values
 _df[eem.ex_bands]
 
-# %% [markdown]
-# 1次反射・n次散乱の除去 (クラスメソッドを使用)
-
-# %%
-eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6, inplace=True, )
-eem.plot_heatmap()
-plt.title(eem.sample)
-
-# %%
-for data in srcdata:
-    eem = fluorescence_util.EEMF7000(data.get('path'))
-    print(eem)
-
-    plt.figure()
-    # eem.plot_contour(level=100, show_sample_name=True)
-
-    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6, inplace=True, )
-    eem.plot_heatmap()
-
-    plt.title(eem.sample)
-
-
-
 # %%
 sample_data = []
 
 for data in srcdata:
+
     eem = fluorescence_util.EEMF7000(data.get('path'))
     print(eem)
 
-    # plt.figure()
-    # eem.plot_contour(level=100, show_sample_name=True)
+    plt.figure()
 
-    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6, inplace=True, )
-    
-    eem_matrix = eem.mat
-    # eem_df = eem.eem_df
-    
+    # ① 散乱ピーク除去
+    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6,
+                                                       remove_first_order=True, 
+                                                       inplace=True)
+
+    # ② 追加で散乱領域全体を除去
+    eem.remove_scatter_regions(inplace=True)
+
+    # nan を 0 に置換
+    eem.eem_df = eem.eem_df.fillna(0)
+
+    eem.plot_heatmap()
+    plt.title(eem.sample)
+
+    eem_matrix = eem.mat  # numpy配列を取り出す
+    eem_matrix = np.nan_to_num(eem_matrix, nan=0.0)  # nanを0に置換
     # サンプルごとにnumpy配列に追加
     sample_data.append(eem_matrix)
 
@@ -184,13 +173,46 @@ for data in srcdata:
 # numpy配列に保存
 eem_array = np.array(sample_data)
 
-eem_array = np.nan_to_num(eem_array, nan=0.0)
-
 # [放射波長，励起波長，9種類]の形で保存
 np.save('eem_data.npy', eem_array)
 
 # 形状確認
 print(f'EEM data shape: {eem_array.shape}')
+
+
+
+
+# %%
+# sample_data = []
+
+# for data in srcdata:
+#     eem = fluorescence_util.EEMF7000(data.get('path'))
+#     print(eem)
+
+#     plt.figure()
+
+#     # ①散乱ピーク除去
+#     eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6,
+#                                                        remove_first_order=True,
+#                                                         inplace=True)
+#     eem_matrix = eem.mat
+#     # eem_df = eem.eem_df
+    
+#     # サンプルごとにnumpy配列に追加
+#     sample_data.append(eem_matrix)
+
+#     print(eem_matrix)
+
+# # numpy配列に保存
+# eem_array = np.array(sample_data)
+
+# eem_array = np.nan_to_num(eem_array, nan=0.0)
+
+# # [放射波長，励起波長，9種類]の形で保存
+# np.save('eem_data.npy', eem_array)
+
+# # 形状確認
+# print(f'EEM data shape: {eem_array.shape}')
 
 # %% [markdown]
 # ---
@@ -244,6 +266,8 @@ plt.title(f"Noisy Synthetic EEM (Sample {index})")
 plt.colorbar(label="Fluorescence Intensity (a.u.)")
 plt.tight_layout()
 plt.show()
+
+print(synthetic_eems.shape)
 
 
 # %% [markdown]
