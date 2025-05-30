@@ -140,14 +140,6 @@ plt.imshow(_df[eem.ex_bands].values)
 # _df.values
 _df[eem.ex_bands]
 
-# %% [markdown]
-# 1次反射・n次散乱の除去 (クラスメソッドを使用)
-
-# %%
-eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6, inplace=True, )
-eem.plot_heatmap()
-plt.title(eem.sample)
-
 # %%
 for data in srcdata:
     eem = fluorescence_util.EEMF7000(data.get('path'))
@@ -178,8 +170,8 @@ for data in srcdata:
     plt.figure()
 
     # ①散乱ピーク除去
-    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=5,
-                                                       remove_first_order=False,
+    eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6,
+                                                       remove_first_order=True,
                                                         inplace=True)
 
     # ②追加で散乱領域全体を除去
@@ -564,9 +556,6 @@ plt.show()
 # %% [markdown]
 # # カメラ出力空間plot
 
-# %%
-
-
 # %% [markdown]
 # ## 分光感度（複数センサチャネル）　× ハイパスフィルタ × 放射波長
 
@@ -735,6 +724,10 @@ plot_distance_matrix_uv(250)  # 365nmでの距離行列を表示
 
 
 # %%
+np.max(camera_response
+)
+
+# %%
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.graph_objs as go
@@ -757,6 +750,7 @@ for data in srcdata:
 ex_wavelengths = np.linspace(200, 600, spds_fill.shape[0])
 em_wavelengths = np.linspace(200, 600, fluorescence.shape[2])
 led_peak_wavelengths = ex_wavelengths[np.argmax(spds_fill, axis=0)]
+
 
 # === Plotlyバーグラフ関数 ===
 def plot_sensor_response_2d(selected_peak):
@@ -831,13 +825,14 @@ def plot_distance_matrix_uv(selected_peak):
     dist_vec = pdist(responses, metric='euclidean')
     dist_mat = squareform(dist_vec)
 
+    vmax = np.max(camera_response)
     # 下三角（対角含む）をマスク（Trueで隠す）
     mask = np.tril(np.ones_like(dist_mat, dtype=bool))
 
     fig, ax = plt.subplots(figsize=(8, 7))
     sns.heatmap(dist_mat, mask=mask, cmap='viridis',
                 xticklabels=sample_names, yticklabels=sample_names,
-                square=True, cbar=True, ax=ax)
+                vmin=0, vmax=vmax, square=True, cbar=True, ax=ax)
 
     ax.set_title(f'Sample Distance Matrix (UV) at {led_peak_wavelengths[i]:.0f} nm')
     ax.set_xlabel('Sample')
@@ -903,6 +898,14 @@ import plotly.graph_objs as go
 import gradio as gr
 import io
 from PIL import Image
+
+# # グローバルスケール計算（初回のみ1回呼び出す想定）
+# all_rgb_dists = np.array([
+#     squareform(pdist(camera_rgb[:, i, :], metric="euclidean"))
+#     for i in range(camera_rgb.shape[1])
+# ])
+# global_vmin = np.min(all_rgb_dists)
+# global_vmax = np.max(all_rgb_dists)
 
 
 # === Plotlyバーグラフ関数 ===
@@ -984,13 +987,15 @@ def plot_distance_matrix_uv(selected_peak):
     dist_vec = pdist(responses, metric='euclidean')
     dist_mat = squareform(dist_vec)
 
+
+    vmax = np.max(camera_response)
     # 下三角（対角含む）をマスク（Trueで隠す）
     mask = np.tril(np.ones_like(dist_mat, dtype=bool))
 
     fig, ax = plt.subplots(figsize=(6, 5))
     sns.heatmap(dist_mat, mask=mask, cmap='viridis',
                 xticklabels=sample_names, yticklabels=sample_names,
-                square=True, cbar=True, ax=ax)
+                vmin=0, vmax=vmax, square=True, cbar=True, ax=ax)
 
     ax.set_title(f'Sample Distance Matrix (UV) at {led_peak_wavelengths[i]:.0f} nm')
     ax.set_xlabel('Sample')
