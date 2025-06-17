@@ -146,10 +146,19 @@ class EEMF7000():
         eem_df.loc[:, self.EM_BANDS_COL] = em_bands
         eem_df.set_index(em_bands.astype(float), inplace=True, append=False)
         eem_df.rename({wl: float(wl) for wl in eem_df.columns if type(wl) != str} , axis='columns', inplace=True)
+
+        # # 250nm 未満の行（放射波長）を除外
+        # eem_df = eem_df[eem_df.index >= 250]
+
         for col in eem_df.columns:
             eem_df[col] = pd.to_numeric(eem_df.loc[:, col], errors='coerce')
 
         self.eem_df = eem_df
+
+        # # 波長リストもそれに合わせて更新
+        # self.em_bands = eem_df.index.to_numpy() 
+
+        # self.mat = eem_df.to_numpy()  # ← これを追加！！    
 
         return eem_df
 
@@ -166,6 +175,8 @@ class EEMF7000():
 
         if show_sample_name:
             plt.title(self.sample)
+
+
 
     def plot_pcolor(self, *,
             vmax=None,

@@ -28,6 +28,7 @@ from fluorescence_util import *
 # 'lead_noFlux.xlsx'
 
 # srcbase = Path("./data/EEM_F-7000_2025-04-11/")
+print(Path.cwd())
 srcbase = Path("./data/EEM_F-7000_2025-05-29/")
 dstdir = Path("./dst/eem/filter")
 
@@ -53,94 +54,26 @@ for data in srcdata:
 em_bands = eem.em_bands
 ex_bands = eem.ex_bands
 
-# %% [markdown]
-# EEMの1次反射・n次散乱光除去のためのスニペット (クラスメソッドに実装済み)
-
 # %%
-verbose = True
-_df = copy.deepcopy(eem.eem_df)
+# for data in srcdata:
+#     eem = fluorescence_util.EEMF7000(data.get('path'))
+#     print(eem)
 
-def find_nearest(array: np.array, value):
-    idx = (np.abs(array - value)).argmin()
-    # val = array[idx]
-    return int(idx)
+#     plt.figure()
 
-def is_out_of_range(value, array: np.array = eem.ex_bands, step=eem.ex_band_step, verbose=False):
-    if value+(step/2) < array.min():
-        if verbose: print(f"{array.max()} < {value-(step/2)}") 
-        return True
-    elif array.max() < value-(step/2):
-        if verbose: print(f"{array.max()} < {value-(step/2)}")
-        return True
-    
-    return False
+#     # ① 散乱ピーク除去
+#     eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6,
+#                                                        remove_first_order=True, 
+#                                                        inplace=True)
 
-def _calc_shift_band(wl_src, degree=1, shift:int=0, band_step=eem.em_band_step):
-    ''' eemのemissionの波長からexcitationの1次反射とn次散乱光の波長を計算する
-    FIXME 後でGPTに埋めさせる
-    :param wl_src: 
-    :param degree:
-    :param shift:
-    :param band_step:
+#     # ② 追加で散乱領域全体を除去
+#     eem.remove_scatter_regions(inplace=True)
 
-    :returns: 
-    '''
-    shifted_bands = wl_src * degree+(shift *band_step)
+#     eem.plot_heatmap()
+#     plt.title(eem.sample)
 
-    return shifted_bands
-
-def _elliminate_eem(eem_df, em, step, degree=1, bands_ex:np.array=eem.ex_bands, *, inplace=False, verbose=False):
-    '''EEMにおける1次反射と2次散乱光を `np.nan` で埋めて消去する。
-    FIXME 後でGPTに埋めさせる
-    '''
-    if not inplace:
-        eem_df = eem_df.copy()
-
-    wl_elim_ex = _calc_shift_band(em, shift= step, degree=degree)
-    out_of_range = is_out_of_range(wl_elim_ex, verbose=verbose) 
-    if verbose: 
-        print(f"base={em} nm:/t({em}, {wl_elim_ex}), out-of-range={out_of_range}")
-    idx_elim_ex = find_nearest(bands_ex, wl_elim_ex) # 最も近いexの波長を求める
-    wl_elim_ex = bands_ex[idx_elim_ex]
-    
-    # 最近傍だと範囲を大きく超えていても最大値に張り付く可能性があるので 
-    # (600nmの2次光の1200nmでも800nmがexの最大値なので800nmが削除対象に含まれている可能性がある) 
-    # 範囲外の波長を除外する
-
-    if em in eem.em_bands and wl_elim_ex in eem.ex_bands and not out_of_range:
-        eem_df.loc[em, wl_elim_ex] = np.nan
-
-    return eem_df
-
-def remove_self_reflection_and_scattering_from_eem(eem_df, em_bands=eem.em_bands, margin_steps=3, *, inplace=False, verbose=False):
-    if not inplace:
-        eem_df = eem_df.copy()
-
-    bands_targets = em_bands
-    for target_em in bands_targets:
-
-        for step in range(margin_steps):
-            # 1次反射
-            eem_df = _elliminate_eem(eem_df, em=target_em, step = -step, degree=1, inplace=inplace, verbose=verbose)
-            eem_df = _elliminate_eem(eem_df, em=target_em, step = +step, degree=1, inplace=inplace, verbose=verbose)
-            # 2次散乱
-            eem_df = _elliminate_eem(eem_df, em=target_em, step = -step, degree=2, inplace=inplace, verbose=verbose)
-            eem_df = _elliminate_eem(eem_df, em=target_em, step = +step, degree=2, inplace=inplace, verbose=verbose)
-            # 3次散乱
-            eem_df = _elliminate_eem(eem_df, em=target_em, step = -step, degree=3, inplace=inplace, verbose=verbose)
-            eem_df = _elliminate_eem(eem_df, em=target_em, step = +step, degree=3, inplace=inplace, verbose=verbose)
-
-    return eem_df
-
-
-# %%
-remove_self_reflection_and_scattering_from_eem(eem_df=_df, margin_steps=6, inplace=True)
-plt.imshow(_df[eem.ex_bands].values)
-# _df.values
-_df[eem.ex_bands]
-
-# %%
 sample_data = []
+sample_name = []
 
 for data in srcdata:
 
@@ -149,1206 +82,452 @@ for data in srcdata:
 
     plt.figure()
 
-    # ① 散乱ピーク除去
+    # ①散乱ピーク除去
     eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6,
-                                                       remove_first_order=True, 
-                                                       inplace=True)
+                                                       remove_first_order=True,
+                                                        inplace=True)
 
     # ② 追加で散乱領域全体を除去
     eem.remove_scatter_regions(inplace=True)
 
-    # nan を 0 に置換
-    eem.eem_df = eem.eem_df.fillna(0)
 
     eem.plot_heatmap()
     plt.title(eem.sample)
 
+
     eem_matrix = eem.mat  # numpy配列を取り出す
     eem_matrix = np.nan_to_num(eem_matrix, nan=0.0)  # nanを0に置換
+    
     # サンプルごとにnumpy配列に追加
     sample_data.append(eem_matrix)
+    sample_name.append(eem.sample)
 
-    print(eem_matrix)
+    # print(eem_matrix)
+
 
 # numpy配列に保存
 eem_array = np.array(sample_data)
-
-# [放射波長，励起波長，9種類]の形で保存
-np.save('eem_data.npy', eem_array)
-
-# 形状確認
-print(f'EEM data shape: {eem_array.shape}')
-
-
-
-
-# %%
-# sample_data = []
-
-# for data in srcdata:
-#     eem = fluorescence_util.EEMF7000(data.get('path'))
-#     print(eem)
-
-#     plt.figure()
-
-#     # ①散乱ピーク除去
-#     eem.remove_self_reflection_and_scattering_from_eem(margin_steps=6,
-#                                                        remove_first_order=True,
-#                                                         inplace=True)
-#     eem_matrix = eem.mat
-#     # eem_df = eem.eem_df
-    
-#     # サンプルごとにnumpy配列に追加
-#     sample_data.append(eem_matrix)
-
-#     print(eem_matrix)
-
-# # numpy配列に保存
-# eem_array = np.array(sample_data)
-
-# eem_array = np.nan_to_num(eem_array, nan=0.0)
-
-# # [放射波長，励起波長，9種類]の形で保存
-# np.save('eem_data.npy', eem_array)
-
-# # 形状確認
-# print(f'EEM data shape: {eem_array.shape}')
-
-# %% [markdown]
-# ---
-
-# %% [markdown]
-# # Bui
-
-# %% [markdown]
-# ## 合成EEMの作成（ノイズあり）
-
-# %%
-def generate_synthetic_eem_with_noise(eem_array, num_samples=500, noise_level=0.05):
-    n_samples, n_ex, n_em = eem_array.shape
-    synthetic_eems = []
-
-    for _ in range(num_samples):
-        weights = np.random.rand(n_samples)
-        weights /= weights.sum()
-        clean_eem = np.tensordot(weights, eem_array, axes=(0, 0))
-
-        # ノイズを加える（正規分布・ランダムノイズ）
-        noise = np.random.normal(loc=0, scale=noise_level * np.max(clean_eem), size=clean_eem.shape)
-        noisy_eem = clean_eem + noise
-        noisy_eem = np.clip(noisy_eem, 0, None)  # 負の値を除去
-
-        synthetic_eems.append(noisy_eem)
-
-    return np.array(synthetic_eems)  # shape: (num_samples, n_ex, n_em)
-
-synthetic_eems = generate_synthetic_eem_with_noise(eem_array, num_samples=500, noise_level=0.05)
-# synthetic_eems.shape → (500, 81, 81)
-
-
-
-# %%
-import matplotlib.pyplot as plt
-
-# ex_bands: 励起波長の配列 (長さ: 81)
-# em_bands: 放射波長の配列 (長さ: 81)
-# synthetic_eems: 生成されたノイズ付きEEM配列 (num_samples, 81, 81)
-
-index = 0  # 表示したいサンプル番号
-noisy_eem = synthetic_eems[index]
-
-plt.figure(figsize=(6, 5))
-plt.imshow(noisy_eem, origin='lower', aspect='auto',
-           extent=[em_bands[0], em_bands[-1], ex_bands[0], ex_bands[-1]])
-plt.xlabel("Emission Wavelength (nm)")
-plt.ylabel("Excitation Wavelength (nm)")
-plt.title(f"Noisy Synthetic EEM (Sample {index})")
-plt.colorbar(label="Fluorescence Intensity (a.u.)")
-plt.tight_layout()
-plt.show()
-
-print(synthetic_eems.shape)
-
-
-# %% [markdown]
-# ## 複数のコンポーネント数に対する Core Consistency の計算 
+print(eem_array.shape)
 
 # %%
 import numpy as np
-import matplotlib.pyplot as plt
-import tensorly as tl
-from tensorly.decomposition import parafac
-from tensorly.tenalg import multi_mode_dot
 
-def compute_core_consistency(tensor, factors):
-    rank = factors[0].shape[1]
-    core = multi_mode_dot(tensor, [tl.transpose(f) for f in factors], modes=[0, 1, 2])
-    identity_core = np.zeros((rank, rank, rank))
-    for r in range(rank):
-        identity_core[r, r, r] = core[r, r, r]
-    error = tl.norm(core - identity_core)
-    total = tl.norm(core)
-    cc = 100 * (1 - (error / total))
-    return cc
-
-def factor_similarity(factors1, factors2):
+def augment_eem_per_mp(eem_array, n_variants=20, noise_level=0.05, seed=None):
     """
-    各モードの因子行列のコサイン類似度を計算し平均を返す。
-    factors1, factors2: list of factor matrices [mode0, mode1, mode2]
-    """
-    from sklearn.metrics.pairwise import cosine_similarity
-    
-    sims = []
-    for f1, f2 in zip(factors1, factors2):
-        # 各列ベクトル同士のコサイン類似度を計算
-        sim_matrix = cosine_similarity(f1.T, f2.T)
-        # 対角成分（対応する成分間の類似度）を平均
-        diag_sim = np.mean(np.diag(sim_matrix))
-        sims.append(diag_sim)
-    return np.mean(sims)
-
-def core_consistency_and_split_half(tensor, max_rank=8):
-    cc_list = []
-    sh_list = []
-    ranks = range(1, max_rank + 1)
-
-    # tensorの最初の軸はサンプル数と仮定
-    n_samples = tensor.shape[0]
-    half = n_samples // 2
-    tensor_1 = tensor[:half]
-    tensor_2 = tensor[half:]
-
-    for r in ranks:
-        print(f"Decomposing rank {r}...")
-
-        # 全体データでCP分解
-        factors_full = parafac(tensor, rank=r, init='random', n_iter_max=500, tol=1e-6)
-        cc = compute_core_consistency(tensor, factors_full.factors)
-        cc_list.append(cc)
-
-        # split-halfで2つに分けてそれぞれCP分解
-        factors_1 = parafac(tensor_1, rank=r, init='random', n_iter_max=500, tol=1e-6)
-        factors_2 = parafac(tensor_2, rank=r, init='random', n_iter_max=500, tol=1e-6)
-
-        # 因子の類似度を計算
-        sim = factor_similarity(factors_1.factors, factors_2.factors)
-        sh_list.append(sim * 100)  # %表示にスケーリング
-
-        print(f"  → Core Consistency: {cc:.2f}%, Split-half similarity: {sim*100:.2f}%")
-
-    # プロット
-    plt.figure(figsize=(8, 5))
-    plt.plot(ranks, cc_list, marker='o', label='Core Consistency (%)')
-    plt.plot(ranks, sh_list, marker='x', label='Split-half Similarity (%)')
-    plt.axhline(90, color='green', linestyle='--', label='90% Threshold')
-    plt.xlabel("Number of Components (Rank)")
-    plt.ylabel("Percentage (%)")
-    plt.title("Core Consistency and Split-half Similarity vs Rank")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-    return ranks, cc_list, sh_list
-
-# synthetic_eems: shape (N, 81, 81) のノイズ付き合成データを用意済みと仮定
-tensor = tl.tensor(synthetic_eems)
-ranks, cc_list, sh_list = core_consistency_and_split_half(tensor, max_rank=8)
-
-
-# %% [markdown]
-# ---
-
-# %% [markdown]
-# # PARAFAC analysis
-
-# %%
-# EEM_array = (sample, Excitation, Emission)
-print(f'EEM data shape: {eem_array.shape}')
-
-# %%
-# 前準備
-import tensorly as tl
-from tensorly.decomposition import parafac
-
-# EEM_array の shape: (sample数, excitation数, emission数)
-# tensorly では mode順が (samples, excitation, emission) でOK
-tensor = tl.tensor(eem_array)
-tensor
-
-
-# %%
-rank = 3  # 試しに3成分で分解
-weights, factors = parafac(tensor, rank=rank, init='random', tol=1e-6, n_iter_max=500)
-
-# factors は (samples, excitation, emission) に対しての因子 (A, B, C)
-sample_factor, excitation_factor, emission_factor = factors
-
-
-# %%
-# 結果の可視化
-# Intensity（強度） は、PARAFAC解析で抽出された**各成分の相対的な寄与度（負荷量、loading）
-
-for i in range(rank):
-    plt.figure(figsize=(10, 4))
-
-    # 励起スペクトル（Excitation）
-    plt.subplot(1, 2, 1)
-    plt.plot(ex_bands, excitation_factor[:, i])
-    plt.xlabel("Excitation Wavelength (nm)")
-    plt.ylabel("Relative Intensity")
-    plt.title(f'Component {i+1} - Excitation')
-
-    # 放射スペクトル（Emission）
-    plt.subplot(1, 2, 2)
-    plt.plot(em_bands, emission_factor[:, i])
-    plt.xlabel("Emission Wavelength (nm)")
-    plt.ylabel("Relative Intensity")
-    plt.title(f'Component {i+1} - Emission')
-
-    plt.tight_layout()
-    plt.show()
-
-
-
-# %%
-import matplotlib.pyplot as plt
-import numpy as np
-
-# TensorlyのPARAFAC出力を仮定
-# weights, (sample_factor, excitation_factor, emission_factor)
-from tensorly.decomposition import parafac
-import tensorly as tl
-
-factors = parafac(tl.tensor(eem_array), rank=3)
-sample_factor, excitation_factor, emission_factor = factors.factors
-
-# 各成分の蛍光マップ（EEM空間）を表示
-for i in range(3):
-    outer = np.outer(excitation_factor[:, i], emission_factor[:, i])
-    plt.figure()
-    plt.imshow(outer, origin='lower', aspect='auto', 
-               extent=[em_bands[0], em_bands[-1], 
-                       ex_bands[0], ex_bands[-1]])
-    plt.title(f'Component {i+1} - Fluorescence Fingerprint')
-    plt.xlabel('Emission Wavelength (nm)')
-    plt.ylabel('Excitation Wavelength (nm)')
-    plt.colorbar(label='Relative Intensity')
-    plt.show()
-
-
-# %% [markdown]
-# ## 各MPとの比較
-
-# %%
-# === サンプル名の取得 ===
-sample_names = []
-for data in srcdata:
-    eem = fluorescence_util.EEMF7000(data.get('path'))
-    sample_names.append(eem.sample)
-
-## 各MPにおける成分強度（Sample Factor）を可視化
-import matplotlib.pyplot as plt
-import numpy as np
-import tensorly as tl
-from tensorly.decomposition import parafac
-
-# PARAFAC 分解
-rank = 3  # 必要に応じて調整
-factors = parafac(tl.tensor(eem_array), rank=rank, init='random', n_iter_max=500)
-sample_factor, ex_factor, em_factor = factors.factors
-
-# 各MPがどの成分に強く寄与しているか
-for r in range(rank):
-    plt.figure(figsize=(8,4))
-    plt.bar(sample_names, sample_factor[:, r])
-    plt.xlabel("Sample Name (MP)")
-    plt.ylabel(f"Component {r+1} Strength")
-    plt.title(f"Component {r+1} Loading across MPs")
-    plt.xticks(rotation=45)  # 横軸ラベルを傾けて見やすく
-    plt.tight_layout()
-    plt.show()
-
-# %%
-## 実EEM vs PARAFAC再構成EEMの比較プロット（1サンプル例）
-# 方法1：こちらが現在の主流（TensorLy ≥ 0.6.0）
-# 方法2（古いバージョン用）
-from tensorly.decomposition._cp import cp_to_tensor as kruskal_to_tensor
-# l_to_tensor
-
-
-# 再構成EEM
-reconstructed = kruskal_to_tensor(factors)
-
-# サンプルごとの比較（例：MP index = 0）
-index = 7
-original = eem_array[index]
-reconstructed_sample = reconstructed[index]
-
-fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-im0 = axes[0].imshow(original, origin='lower', aspect='auto',
-                     extent=[em_bands[0], em_bands[-1], ex_bands[0], ex_bands[-1]])
-axes[0].set_title(f"Original EEM (Sample {index})")
-axes[0].set_xlabel("Emission Wavelength")
-axes[0].set_ylabel("Excitation Wavelength")
-fig.colorbar(im0, ax=axes[0])
-
-im1 = axes[1].imshow(reconstructed_sample, origin='lower', aspect='auto',
-                     extent=[em_bands[0], em_bands[-1], ex_bands[0], ex_bands[-1]])
-axes[1].set_title(f"Reconstructed EEM (Sample {index})")
-axes[1].set_xlabel("Emission Wavelength")
-axes[1].set_ylabel("Excitation Wavelength")
-fig.colorbar(im1, ax=axes[1])
-
-plt.tight_layout()
-plt.show()
-
-
-# %%
-for r in range(rank):
-    peak_ex = ex_bands[np.argmax(ex_factor[:, r])]
-    peak_em = em_bands[np.argmax(em_factor[:, r])]
-    print(f"Component {r+1}: Excitation ~ {peak_ex} nm, Emission ~ {peak_em} nm")
-
-# plt.bar(sample_names, sample_factor[:, r])
-
-
-# %% [markdown]
-# ----
-
-# %% [markdown]
-# # LED SPD
-
-# %%
-# _param_set = '200to600nm_narrow'
-_param_set = '200to600nm_wide'
-_params = {
-    '200to600nm_narrow':{'wl_start': 200, 'wl_end': 600, 'band_steps': 10, 'band_resolution': 5, 'wl_FWHM': 10},
-    '200to600nm_wide':  {'wl_start': 200, 'wl_end': 600, 'band_steps': 10, 'band_resolution': 5, 'wl_FWHM': 50},
-    }
-param = _params[_param_set]
-
-_wl_bands = np.arange(param['wl_start'], param['wl_end'], param['band_steps'])
-_df = pd.DataFrame({'wavelength':_wl_bands, })
-_df.loc[:,_wl_bands] = 0
-
-for wl in _wl_bands:
-    _df.loc[_df.loc[:,'wavelength']==wl,wl] = 1
-
-wl_sensor = _wl_bands
-
-
-# %%
-wl_FWHM = param['wl_FWHM']
-var_FEHM = pow(wl_FWHM/2.35, 2)
-f"σ={var_FEHM}, for {wl_FWHM} nm of FWHM"
-
-# %%
-wl_start = param['wl_start']
-wl_end = param['wl_end']
-wl_res = param.get('band_resolution',5)
-wl = np.array(range(wl_start, wl_end+1, wl_res))
-wl_width = wl_end - wl_start
-wl_bandstep = param['band_steps']
-# wl_peeks = np.array(
-#     range(wl_start+round(wl_bandstep/2), wl_end+1, wl_bandstep))
-wl_peeks = np.array(range(wl_start, wl_end+1, wl_bandstep))
-print("Range: {0}--{1}, ".format(wl_peeks[0],
-      wl_peeks[-1]), "Band steps: {}".format(wl_bandstep))
-
-label_wl = '{0}to{1}nm'.format(wl_start, wl_end, )
-
-print(np.array(wl_peeks))
-print('# of LEDs: {}'.format(len(wl_peeks)))
-
-
-# %% [markdown]
-# ## Make SPD
-
-# %%
-spds_fill_ = np.array([
-    np.exp(-pow(wl - wl_peek_, 2) / var_FEHM)
-    for wl_peek_ in wl_peeks
-    ])
-spds_fill = spds_fill_.T
-spds_fill.shape
-
-# %%
-fig = plt.figure(1)
-ax = fig.add_subplot(1, 1, 1)
-plt.plot(
-    wl, spds_fill, label=[
-    'SPDs'if i == 0 else '_nolegend_' for i in range(spds_fill.shape[1])])
-plt.xlim([wl[0], wl[-1]])
-plt.ylim([0, plt.ylim()[1]])
-plt.xlabel('Wavelength [nm]')
-plt.ylabel('Relative Power')
-plt.grid(True)
-plt.legend(bbox_to_anchor=(1.0, 1.15))
-
-
-# %%
-fig = plt.figure(1)
-ax = fig.add_subplot(1, 1, 1)
-plt.plot(
-    wl, spds_fill[:,13], label=[
-    'SPDs'if i == 0 else '_nolegend_' for i in [7,]]
-, linewidth = 8
-    )
-# plt.xlim([wl[0], wl[-1]])
-plt.xlim([280, 380])
-plt.ylim([0, plt.ylim()[1]])
-plt.xlabel('Wavelength [nm]')
-plt.ylabel('Relative Power')
-plt.grid(True)
-plt.legend(bbox_to_anchor=(1.0, 1.15))
-
-spds_fill.shape
-wl_peeks
-
-# %% [markdown]
-# ----
-
-# %% [markdown]
-# # camera sensitivity
-
-# %%
-import numpy as np
-import matplotlib.pyplot as plt
-
-# 波長範囲の設定（動的に変更可能）
-wl_start = 200  # nm（変更したい開始波長）
-wl_end = 600   # nm（変更したい終了波長）
-wl_step = 5     # nm（分解能）
-
-# 波長範囲の生成
-wavelengths = np.arange(wl_start, wl_end + 1, wl_step)
-
-# チャネルごとの設定
-channels = [
-    {"peak": 500, "fwhm": 380, "max_val": 1.0},
-    {"peak": 230, "fwhm": 40, "max_val": 0.3}
-]
-
-# channels = [
-#     {"name": "Red",   "peak": 600, "fwhm": 100, "max_val": 0.9},
-#     {"name": "Green", "peak": 540, "fwhm": 90,  "max_val": 1.0},
-#     {"name": "Blue",  "peak": 460, "fwhm": 80,  "max_val": 0.8}
-# ]
-
-# 感度行列（列ごとにチャネル）
-sensitivity_all = []
-
-for ch in channels:
-    sigma = ch["fwhm"] / 2.355  # FWHMから標準偏差を計算
-    sensitivity = np.exp(-0.5 * ((wavelengths - ch["peak"]) / sigma) ** 2)  # ガウス分布
-    sensitivity /= np.max(sensitivity)  # 最大値で正規化
-    sensitivity *= ch["max_val"]  # 最大感度値でスケーリング
-    sensitivity_all.append(sensitivity)
-
-# スタック（shape: (len(wl), 2)）
-sensitivity_all = np.stack(sensitivity_all, axis=1)
-
-# 合成：単純加算 → 正規化
-camera_sensitivity = np.sum(sensitivity_all, axis=1)
-camera_sensitivity /= np.max(camera_sensitivity)
-
-# 描画
-plt.figure(figsize=(8, 5))
-plt.plot(wavelengths, sensitivity_all[:, 0], label='Channel 1', linestyle='--')
-plt.plot(wavelengths, sensitivity_all[:, 1], label='Channel 2', linestyle='--')
-# plt.plot(wavelengths, sensitivity_all[:, 2], label='Channel 3', linestyle='--')
-plt.plot(wavelengths, camera_sensitivity, label='camera Sensitivity', color='black', linewidth=2)
-plt.title('camera Spectral Sensitivity')
-plt.xlabel('Wavelength [nm]')
-plt.ylabel('Relative Sensitivity')
-plt.grid(True)
-plt.legend()
-plt.xlim(wl_start, wl_end)  # 波長範囲を設定
-plt.ylim(0, 1.05)
-plt.show()
-
-# 合成感度の形状を確認
-print(camera_sensitivity.shape) # (波長（5step），)
-print(sensitivity_all.shape) # (波長（5step），3チャンネル）
-# wavelengths
-
-
-# %% [markdown]
-# ---
-
-# %% [markdown]
-# # カメラ側にハイパスフィルタを適用
-
-# %% [markdown]
-# ## カットオフ波長の計算
-
-# %%
-def generate_cutoff_list(peak_wavelengths, fwhm, margin_step, step):
-    """
-    各LEDに対応するハイパスフィルタのカットオフ波長を計算して返す。
+    各MP（サンプル）に対して、ノイズ付きのEEMバリエーションを生成。
 
     Parameters:
-        peak_wavelengths (list or np.ndarray): 各LEDの中心波長
-        fwhm (float): LEDのFWHM（半値幅）
-        margin_step (float): 自己反射回避マージンのステップサイズ
-        margin_num (int): ステップ数（margin_step × margin_numが追加マージン）
+        eem_array: np.ndarray
+            入力EEM配列。shape = (num_MP, n_ex, n_em)
+        n_variants: int
+            各MPごとに生成するノイズ付きEEMの数
+        noise_level: float
+            ノイズのスケール（最大値に対する割合）
+        seed: int or None
+            乱数シード（再現性用）
 
     Returns:
-        list of float: 各LEDに対応したカットオフ波長（nm）
+        augmented_eems: np.ndarray
+            shape = (num_MP, n_variants, n_ex, n_em)
     """
-    margin = margin_step * step
-    cutoff_list = np.array([pw + fwhm + margin for pw in peak_wavelengths])
-    
-    return cutoff_list
+    if seed is not None:
+        np.random.seed(seed)
 
-cutoff_list = generate_cutoff_list(wl_peeks, fwhm=50, margin_step=6, step=5)
-# cutoff_list の長さは spds_fillの列数と一致させる
-if len(cutoff_list) != spds_fill.shape[1]:
-    raise ValueError("cutoff_list length must match number of LEDs")
+    num_MP, n_ex, n_em = eem_array.shape
+    augmented_eems = np.zeros((num_MP, n_variants, n_ex, n_em))
 
-print(f"wl_peeks:{wl_peeks}")
-print(f"cutoff_list:{cutoff_list}")
+    for i in range(num_MP):
+        base_eem = eem_array[i]
+        for j in range(n_variants):
+            noise = np.random.normal(loc=0, scale=noise_level * np.max(base_eem), size=base_eem.shape)
+            noisy_eem = np.clip(base_eem + noise, 0, None)
+            augmented_eems[i, j] = noisy_eem
+
+    return augmented_eems
+
+# 各MPに対して20個ずつノイズ付きEEMを生成
+# 入力: eem_array.shape = (9, 81, 81)
+augmented_eems = augment_eem_per_mp(eem_array, n_variants=500, noise_level=0.05)
+
+# 出力: shape = (9, 20, 81, 81) → 各MPごとに20個のEEMバリエーション
+print("Augmented EEM shape:", augmented_eems.shape)
 
 
+# %% [markdown]
+# ## ノイズありサンプルの生成
 
 # %%
-def generate_hp_filter_matrix(wavelengths, cutoff_list, transition_width):
-    hp_matrix = np.zeros((len(wavelengths), len(cutoff_list)))
-    for i, cutoff in enumerate(cutoff_list):
-        hp_matrix[:, i] = 1 / (1 + np.exp(-(wavelengths - cutoff) / transition_width))
-    return hp_matrix
-
-def plot_effective_camera_sens_by_peak(peak_wavelength, wl_peaks, wavelengths,
-                                       camera_sensitivity, hp_filter_matrix, spds_fill,
-                                       cutoff_list):
+def augment_eem_per_mp_with_scatter_removal(eem_array, ex_bands, em_bands, n_variants=20, noise_level=0.05, seed=None):
     """
-    指定したLEDのピーク波長に対応するindexの有効カメラ感度をプロット。
+    ノイズ付きEEMを生成し、散乱領域を0にして除去する。
+
+    Parameters:
+        eem_array: np.ndarray
+            入力EEM配列。shape = (num_MP, n_ex, n_em)
+        ex_bands: np.ndarray
+            励起波長リスト（shape = n_ex）
+        em_bands: np.ndarray
+            蛍光波長リスト（shape = n_em）
+        n_variants: int
+            各MPごとに生成するノイズ付きEEMの数
+        noise_level: float
+            ノイズのスケール（最大値に対する割合）
+        seed: int or None
+            乱数シード
+
+    Returns:
+        augmented_eems: np.ndarray
+            shape = (num_MP, n_variants, n_ex, n_em)
     """
-    idx = np.argmin(np.abs(np.array(wl_peaks) - peak_wavelength))
-    cutoff = cutoff_list[idx]
+    if seed is not None:
+        np.random.seed(seed)
 
-    plt.figure(figsize=(10, 5))
+    num_MP, n_ex, n_em = eem_array.shape
+    augmented_eems = np.zeros((num_MP, n_variants, n_ex, n_em))
 
-    # 有効感度
-    plt.plot(wavelengths, effective_camera_sens[:, idx], label=f'Effective Sens (LED @ {wl_peaks[idx]}nm)', linewidth=2)
-    
-    # ハイパスフィルタ
-    plt.plot(wavelengths, hp_filter_matrix[:, idx], label='High-pass Filter', linestyle='dashed')
-    
-    # カメラ感度
-    plt.plot(wavelengths, camera_sensitivity, label='Camera Sensitivity', color='gray', alpha=0.7)
-    
-    # LED SPD
-    if spds_fill is not None:
-        plt.plot(wavelengths, spds_fill[:, idx], label='LED SPD', linestyle='dashdot', alpha=0.7)
+    # 散乱領域マスク（True: 有効領域, False: 散乱 → 0にする）
+    ex_grid, em_grid = np.meshgrid(ex_bands, em_bands, indexing='ij')
+    valid_mask = (em_grid >= ex_grid) & (em_grid <= 2 * ex_grid)
 
-    # --- カットオフ波長の縦線 ---
-    plt.axvline(cutoff, color='red', linestyle='dotted', linewidth=3, label=f'Cutoff = {cutoff:.1f} nm')
-    
-    plt.title(f'Effective Camera Sensitivity (LED peak {wl_peaks[idx]} nm)')
-    plt.xlabel("Wavelength [nm]")
-    plt.ylabel("Sensitivity / Intensity")
-    plt.grid(True)
-    plt.legend()
-    plt.xlim(wavelengths[0], wavelengths[-1])
-    plt.ylim(0, 1.05)
-    plt.tight_layout()
-    plt.show()
+    for i in range(num_MP):
+        base_eem = eem_array[i]
+        for j in range(n_variants):
+            noise = np.random.normal(loc=0, scale=noise_level * np.max(base_eem), size=base_eem.shape)
+            noisy_eem = np.clip(base_eem + noise, 0, None)
+            noisy_eem[~valid_mask] = 0  # 散乱領域を0に
+            augmented_eems[i, j] = noisy_eem
 
-# 事前定義済みの変数:
-# wavelengths, cutoff_list, camera_sensitivity, wl_peaks, spds_fill
+    return augmented_eems
 
-# フィルタパラメータ
-transition_width = 10  # nm
-hp_filter_matrix = generate_hp_filter_matrix(wavelengths, cutoff_list, transition_width)
-effective_camera_sens = camera_sensitivity[:, None] * hp_filter_matrix
-
-# === 使用例 ===
-plot_effective_camera_sens_by_peak(
-    peak_wavelength=250,  # ここを任意で変える
-    wl_peaks=wl_peeks,
-    wavelengths=wavelengths,
-    camera_sensitivity=camera_sensitivity,
-    hp_filter_matrix=hp_filter_matrix,
-    spds_fill=spds_fill,
-    cutoff_list=cutoff_list
+# ex_bands, em_bands は np.array で定義されていると仮定
+augmented_eems = augment_eem_per_mp_with_scatter_removal(
+    eem_array,
+    ex_bands=ex_bands,
+    em_bands=em_bands,
+    n_variants=500,
+    noise_level=0.05,
+    seed=42
 )
 
-hp_filter_matrix.shape
-
-# %% [markdown]
-# ---
-
-# %% [markdown]
-# # EEM × LED × カメラ感度
 
 # %%
-print(eem_array.shape)  # (10, 81, 81) = (サンプル数（MP），励起，放射)
-print(spds_fill.shape)  # (81, 41) = (光強度（各励起波長），LEDの数)
-
-# shapes: (10, 81, 81) @ (81, 41) → (10, 41, 81){(サンプル数（MP），LEDの数，放射（蛍光）)}　
-eem_array = np.nan_to_num(eem_array)
-fluorescence = np.einsum('sem,el->slm', eem_array, spds_fill)
-print(fluorescence.shape) 
-
-
-
-print(effective_camera_sens.shape)
-
-# shapes: (10, 41, 81) @ (81, 41) → (10, 41)(サンプル数，LEDの数)
-# 蛍光 × カメラ感度(with Filter) → カメラが感じる信号
-camera_signals = np.einsum('slm,ml->sl', fluorescence, effective_camera_sens)
-print(camera_signals.shape)
-
-
-# %%
-import numpy as np
 import matplotlib.pyplot as plt
 
-# === サンプル名の取得 ===
-sample_names = []
-for data in srcdata:
-    eem = fluorescence_util.EEMF7000(data.get('path'))
-    sample_names.append(eem.sample)
+def plot_augmented_eems_one_by_one(augmented_eems, ex_bands, em_bands, sample_names=None):
+    """
+    各MPから1つずつノイズ付きEEMを、個別にプロット（励起：横軸、放射：縦軸）。
 
-# === 波長定義 ===
-ex_wavelengths = np.linspace(200, 600, spds_fill.shape[0])  # 励起波長
-em_wavelengths = np.linspace(200, 600, fluorescence.shape[2])  # 放射波長
+    Parameters:
+        augmented_eems: np.ndarray
+            shape = (num_MP, n_variants, n_ex, n_em)
+        ex_bands: np.ndarray
+            励起波長リスト（横軸）
+        em_bands: np.ndarray
+            発光波長リスト（縦軸）
+        sample_names: list or None
+            MPごとの名前リスト（任意）
+    """
+    num_MP = augmented_eems.shape[0]
 
-# === 各LEDのピーク波長取得 ===
-led_peak_wavelengths = ex_wavelengths[np.argmax(spds_fill, axis=0)]
+    for mp_idx in range(num_MP):
+        eem = augmented_eems[mp_idx, 0]  # 各MPで最初のノイズバージョンを表示
 
-# === 任意指定（表示するサンプル・LED波長）===
-sample_name = 'ABS'
-sample_idx = sample_names.index(sample_name)
-desired_peak_wavelength = 280
-led_idx = np.argmin(np.abs(led_peak_wavelengths - desired_peak_wavelength))
-print(f"Selected LED {led_idx} with peak wavelength {led_peak_wavelengths[led_idx]:.1f} nm")
+        plt.figure(figsize=(6, 5))
+        plt.imshow(eem, origin='lower',
+                   extent=[ex_bands[0], ex_bands[-1], em_bands[0], em_bands[-1]],
+                   aspect='auto', cmap='viridis')
 
-# === 該当サンプル・LEDの蛍光スペクトルとLED SPD・カメラ感度取得 ===
-fluor = fluorescence[sample_idx, led_idx]  # shape: (81,)
-led_spd = spds_fill[:, led_idx]           # shape: (81,)
-cam_resp = fluor * effective_camera_sens[:, led_idx]     # 蛍光 × カメラ感度
-cam_sens = camera_sensitivity             # shape: (81,)
+        plt.xlabel('Excitation (nm)')
+        plt.ylabel('Emission (nm)')
+        title = sample_names[mp_idx] if sample_names else f'MP {mp_idx}'
+        plt.title(f'Augmented EEM - {title}')
+        plt.colorbar(label='Intensity')
+        plt.tight_layout()
+        plt.show()
 
-
-# === ハイパスフィルタ情報 ===
-hp_curve = hp_filter_matrix[:, led_idx]  # shape: (81,)
-cutoff = cutoff_list[led_idx]
-
-# === プロット ===
-fig, ax1 = plt.subplots(figsize=(10, 5))
-
-# 左軸：蛍光スペクトル・カメラ応答
-ax1.plot(em_wavelengths, fluor, label='Fluorescence', color='green', linestyle='--')
-ax1.plot(em_wavelengths, cam_resp, label='Camera Response (Fluorescence × Sensitivity)', color='blue')
-ax1.set_xlabel('Wavelength [nm]')
-ax1.set_ylabel('Intensity (Fluorescence / Camera Response)')
-ax1.grid(True)
-ax1.legend(loc='upper left')
-
-# 右軸：LED SPD・カメラ感度・ハイパスフィルタ
-ax2 = ax1.twinx()
-ax2.plot(ex_wavelengths, led_spd, 'r--', alpha=0.6, label='LED SPD')
-ax2.plot(em_wavelengths, cam_sens, 'm:', alpha=0.7, label='Camera Sensitivity')
-ax2.plot(em_wavelengths, hp_curve, color='orange', linestyle='-', alpha=0.7, label='High-pass Filter')
-ax2.axvline(cutoff, color='orange', linestyle='dotted', linewidth=2, label=f'Cutoff = {cutoff:.1f} nm')
-ax2.set_ylabel('LED SPD / Camera Sensitivity / HP Filter')
-ax2.legend(loc='upper right')
-
-plt.title(f'Sample: {sample_name}, LED Peak: {led_peak_wavelengths[led_idx]:.1f} nm')
-plt.tight_layout()
-plt.show()
+plot_augmented_eems_one_by_one(augmented_eems, ex_bands, em_bands, sample_names=sample_name)
 
 
 # %% [markdown]
-# ---
-
-# %% [markdown]
-# # カメラ出力空間plot
-
-# %%
-
-
-# %% [markdown]
-# ## 分光感度（複数センサチャネル）　× ハイパスフィルタ × 放射波長
-
-# %%
-print(fluorescence.shape)               # (10, 41, 81){(サンプル数（MP），LEDの数，放射（蛍光）)}
-# print(sensitivity_all.shape)            # (81, 3) = (波長，RGBセンサチャネル)
-print(hp_filter_matrix.shape)             # (81, 41) = (波長，LEDの数)
-
-print(camera_sensitivity.shape)           # (81, ) = (波長，)　1センサチャネル モノクロカメラ
-
-
-# # 複数チャネルの場合
-# # 有効感度 = 分光感度 × フィルタ
-# effective_sens = sensitivity_all[:, :, None] * hp_filter_matrix[:, None, :]
-# print(effective_sens.shape)
-
-# # それぞれのセンサチャネル応答 = 放射波長 × 有効感度
-# # shapes: (10, 41, 81) @  → 
-# camera_response = np.einsum('sle,lcr->slc', fluorescence, effective_sens.transpose(2,1,0))
-# print(camera_response.shape)
-
-
-# 単一チャネルの場合　
-# 有効感度 = 分光感度　× フィルタ 
-# (41, 81) * (81, ) = (41, 81)
-effective_sens = hp_filter_matrix.T * camera_sensitivity  
-print(effective_sens.shape)
-
-# チャネル応答 = 放射波長 × 有効感度
-# shapes: (10, 41, 81) @ (41, 81) → (10, 41) 10サンプル×41LEDのセンサ応答値
-camera_response = np.einsum('sle,le->sl', fluorescence, effective_sens)
-print(camera_response.shape)
-
-
-# %% [markdown]
-# ## カメラ出力空間
+# ## PARAFAC，Core Consistency，Split half
 
 # %%
 import numpy as np
-import plotly.graph_objs as go
-import gradio as gr
+import tensorly as tl
+from tensorly.decomposition import parafac
+from scipy.stats import pearsonr
+from corcondia import corcondia_3d
 
-def plot_sensor_response_2d(selected_peak):
-    led_idx = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
+tl.set_backend('numpy')
 
-    max_val = np.max(camera_response) * 1.1  # 応答値に応じたスケール固定
+# --- PARAFAC結果をすべて保存する関数 ---
+def compute_parafac_results(eem_tensor, max_components):
+    results = []
+    for r in range(1, max_components + 1):
+        factors = parafac(eem_tensor, rank=r, init='random', tol=1e-6, n_iter_max=200)
+        results.append(factors)
+    return results
 
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=sample_names,
-        y=camera_response[:, led_idx],
-        text=[f"{v:.2f}" for v in camera_response[:, led_idx]],
-        textposition='auto',
-        marker_color='gray'
-    ))
+# --- Core Consistency Diagnostic (正式版 CORCONDIA)
+def compute_core_consistency_corcondia(tensor, max_components=7):
+    cc_list = []
+    for r in range(1, max_components + 1):
+        cc = corcondia_3d(tensor, k=r)
+        cc_list.append(cc)
+    return cc_list
 
-    fig.update_layout(
-        title=f"センサ応答（励起波長 {led_peak_wavelengths[led_idx]:.0f} nm）",
-        xaxis_title="サンプル",
-        yaxis_title="応答値",
-        width=500,
-        height=400,
-        bargap=0.1,
-        xaxis=dict(tickangle=-45),
-        yaxis=dict(range=[0, max_val])  # ← 固定スケール
-    )
+# --- Split-Half 類似度の一括計算（各ランクで別々に分割＋分解）
+def compute_split_half_similarities(tensor, max_components):
+    sim_list = []
+    for r in range(1, max_components + 1):
+        all_idx = np.arange(tensor.shape[2])
+        np.random.shuffle(all_idx)
+        half1 = tensor[:, :, all_idx[:tensor.shape[2] // 2]]
+        half2 = tensor[:, :, all_idx[tensor.shape[2] // 2:]]
 
-    return fig
+        f1 = parafac(half1, rank=r, init='random', tol=1e-6, n_iter_max=200)
+        f2 = parafac(half2, rank=r, init='random', tol=1e-6, n_iter_max=200)
 
-peak_min = int(led_peak_wavelengths.min())
-peak_max = int(led_peak_wavelengths.max())
-step = int(np.min(np.diff(led_peak_wavelengths)))
+        ex1, em1, _ = f1.factors
+        ex2, em2, _ = f2.factors
 
-iface = gr.Interface(
-    fn=plot_sensor_response_2d,
-    inputs=gr.Slider(minimum=peak_min, maximum=peak_max, step=step, label="励起波長 [nm]", interactive=True),
-    outputs=gr.Plot(label="モノクロセンサ応答（バーグラフ）"),
-    live=True,
-    title="センサ応答の可視化"
-)
+        sim_total = 0
+        for i in range(r):
+            r_ex, _ = pearsonr(ex1[:, i], ex2[:, i])
+            r_em, _ = pearsonr(em1[:, i], em2[:, i])
+            sim_total += (r_ex + r_em) / 2
+        sim_list.append(sim_total / r)
+    return sim_list
 
-iface.launch()
+# --- 各MPに対して Core Consistency（CORCONDIA）と Split-Half 類似度を計算 ---
+cc_dict = {}
+sh_dict = {}
+factors_dict = {}
 
+for idx, eem_tensor in enumerate(augmented_eems):
+    sample = sample_name[idx]
+    print(f"\n🔍【{sample}】の Core Consistency / Split-Half 計算中...")
 
-# %% [markdown]
-# ## 分離度
+    tensor = np.transpose(eem_tensor, (1, 2, 0))  # (exc, em, sample)
+    factors_dict[sample] = compute_parafac_results(tensor, max_components=7)
+
+    # 正式な Core Consistency 計算（CORCONDIA）
+    cc_dict[sample] = compute_core_consistency_corcondia(tensor, max_components=7)
+
+    # Split-Half 類似度
+    sh_dict[sample] = compute_split_half_similarities(tensor, max_components=7)
+
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
-from scipy.spatial.distance import pdist
 
-# 分離度の平均と標準偏差を格納するリスト
-separability_means = []
-separability_stds = []
+def plot_core_consistency_and_similarity(cc_list, sh_list, sample_label="Sample", start_rank=1):
+    """
+    Core ConsistencyとSplit-Half類似度を同時にプロットする関数
 
-# 各励起波長（列）について分離度（ユークリッド距離の平均）とばらつきを計算
-for i in range(camera_response.shape[1]):
-    responses = camera_response[:, i].reshape(-1, 1)  # shape: (samples, 1)
-    distances = pdist(responses, metric='euclidean')  # 全組み合わせの距離
-    separability_means.append(np.mean(distances))
-    separability_stds.append(np.std(distances))      # 標準偏差を計算
+    Parameters:
+        cc_list: list of float（Core Consistency, 各成分数に対応）
+        sh_list: list of float（Split-Half 類似度, 各成分数に対応）
+        sample_label: str（プロットタイトル用）
+        start_rank: int（通常は1, cc_list[0]がrank=1のとき）
+    """
+    ranks = list(range(start_rank, start_rank + len(cc_list)))
 
-separability_means = np.array(separability_means)
-separability_stds = np.array(separability_stds)
-
-# 最も識別に優れる波長
-max_idx = np.argmax(separability_means)
-best_wavelength = led_peak_wavelengths[max_idx]
-best_score = separability_means[max_idx]
-
-# プロット（平均値＋標準偏差のエラーバー付き）
-plt.figure(figsize=(8, 5))
-plt.errorbar(
-    led_peak_wavelengths,
-    separability_means,
-    yerr=separability_stds,
-    fmt='-o',
-    capsize=5,
-    label='Separability (mean ± std)'
-)
-plt.axvline(best_wavelength, color='r', linestyle='--', label=f'Best Excitation: {best_wavelength:.0f} nm')
-plt.scatter(best_wavelength, best_score, color='red')
-
-plt.title('Separability by Excitation Wavelength (1-Channel UV Camera)')
-plt.xlabel('Excitation Wavelength [nm]')
-plt.ylabel('Separability')
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-plt.show()
-
-
-# %%
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.spatial.distance import squareform, pdist
-
-def plot_distance_matrix_uv(selected_wavelength):
-    # 波長に最も近いインデックスを探す
-    i = np.argmin(np.abs(led_peak_wavelengths - selected_wavelength))
-    
-    responses = camera_response[:, i].reshape(-1, 1)
-    # responses_norm = (responses - np.mean(responses)) / np.std(responses)
-
-    dist_vec = pdist(responses, metric='euclidean')
-    # dist_vec = pdist(responses_norm, metric='euclidean')
-    dist_mat = squareform(dist_vec)
-
-    plt.figure(figsize=(8, 7))
-    im = plt.imshow(dist_mat, cmap='viridis')
-    plt.colorbar(im, label='Euclidean Distance')
-
-    plt.title(f'Sample Distance Matrix (UV) at {led_peak_wavelengths[i]:.0f} nm')
-
-    plt.xticks(ticks=np.arange(len(sample_names)), labels=sample_names, rotation=45, ha='right')
-    plt.yticks(ticks=np.arange(len(sample_names)), labels=sample_names)
-    plt.xlabel('Sample')
-    plt.ylabel('Sample')
-
-    plt.tight_layout()
-    plt.show()
-
-# 使い方例
-plot_distance_matrix_uv(250)  # 365nmでの距離行列を表示
-
-
-# %%
-import numpy as np
-import matplotlib.pyplot as plt
-import plotly.graph_objs as go
-import gradio as gr
-import io
-from PIL import Image
-
-# === 初期データ準備（ここは既にある前提で省略） ===
-# srcdata, fluorescence_util, fluorescence, spds_fill,
-# effective_camera_sens, camera_sensitivity,
-# hp_filter_matrix, cutoff_list などの事前定義済み変数を前提
-
-# --- サンプル名の取得 ---
-sample_names = []
-for data in srcdata:
-    eem = fluorescence_util.EEMF7000(data.get('path'))
-    sample_names.append(eem.sample)
-
-# --- 波長定義とLEDピーク ---
-ex_wavelengths = np.linspace(200, 600, spds_fill.shape[0])
-em_wavelengths = np.linspace(200, 600, fluorescence.shape[2])
-led_peak_wavelengths = ex_wavelengths[np.argmax(spds_fill, axis=0)]
-
-# === Plotlyバーグラフ関数 ===
-def plot_sensor_response_2d(selected_peak):
-    led_idx = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
-    max_val = np.max(camera_response) * 1.1
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=sample_names,
-        y=camera_response[:, led_idx],
-        text=[f"{v:.2f}" for v in camera_response[:, led_idx]],
-        textposition='auto',
-        marker_color='gray'
-    ))
-
-    fig.update_layout(
-        title=f"センサ応答（励起波長 {led_peak_wavelengths[led_idx]:.0f} nm）",
-        xaxis_title="サンプル",
-        yaxis_title="応答値",
-        width=500,
-        height=400,
-        bargap=0.1,
-        xaxis=dict(tickangle=-45),
-        yaxis=dict(range=[0, max_val])
-    )
-    return fig
-
-# === matplotlibスペクトル図 ===
-def plot_spectra(selected_sample, selected_peak):
-    sample_idx = sample_names.index(selected_sample)
-    led_idx = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
-
-    fluor = fluorescence[sample_idx, led_idx]
-    led_spd = spds_fill[:, led_idx]
-    cam_resp = fluor * effective_camera_sens[:, led_idx]
-    cam_sens = camera_sensitivity
-    hp_curve = hp_filter_matrix[:, led_idx]
-    cutoff = cutoff_list[led_idx]
-
-    fig, ax1 = plt.subplots(figsize=(10, 5))
-
-    ax1.plot(em_wavelengths, fluor, label='Fluorescence', color='green', linestyle='--')
-    ax1.plot(em_wavelengths, cam_resp, label='Camera Response (Fluor × Sens)', color='blue')
-    ax1.set_xlabel('Wavelength [nm]')
-    ax1.set_ylabel('Intensity (Fluorescence / Camera Response)')
-    ax1.grid(True)
-    ax1.legend(loc='upper left')
-
+    fig, ax1 = plt.subplots(figsize=(7, 4))
     ax2 = ax1.twinx()
-    ax2.plot(ex_wavelengths, led_spd, 'r--', alpha=0.6, label='LED SPD')
-    ax2.plot(em_wavelengths, cam_sens, 'm:', alpha=0.7, label='Camera Sensitivity')
-    ax2.plot(em_wavelengths, hp_curve, color='orange', linestyle='-', alpha=0.7, label='High-pass Filter')
-    ax2.axvline(cutoff, color='orange', linestyle='dotted', linewidth=2, label=f'Cutoff = {cutoff:.1f} nm')
-    ax2.set_ylabel('LED SPD / Camera Sensitivity / HP Filter')
-    ax2.legend(loc='upper right')
 
-    plt.title(f'Sample: {selected_sample}, LED Peak: {led_peak_wavelengths[led_idx]:.1f} nm')
-    plt.tight_layout()
+    ax1.plot(ranks, cc_list, 'o-', color='tab:blue', label='Core Consistency')
+    ax2.plot(ranks, sh_list, 's--', color='tab:red', label='Split-Half Similarity')
 
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close(fig)
-    buf.seek(0)
-    return Image.open(buf)
+    ax1.set_xlabel("Component Rank")
+    ax1.set_ylabel("Core Consistency (%)", color='tab:blue')
+    ax1.set_ylim(0, 100)
+    ax2.set_ylabel("Similarity(%)", color='tab:red')
+    ax2.set_ylim(0, 1.0)
 
-# --- 距離行列表示関数をGradio対応に改修 ---
+    ax1.tick_params(axis='y', labelcolor='tab:blue')
+    ax2.tick_params(axis='y', labelcolor='tab:red')
 
-def plot_distance_matrix_uv(selected_peak):
-    i = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
-    responses = camera_response[:, i].reshape(-1, 1)
+    ax1.set_title(f"{sample_label}: Core Consistency & Split-Half Similarity")
 
-    dist_vec = pdist(responses, metric='euclidean')
-    dist_mat = squareform(dist_vec)
-
-    # 下三角（対角含む）をマスク（Trueで隠す）
-    mask = np.tril(np.ones_like(dist_mat, dtype=bool))
-
-    fig, ax = plt.subplots(figsize=(8, 7))
-    sns.heatmap(dist_mat, mask=mask, cmap='viridis',
-                xticklabels=sample_names, yticklabels=sample_names,
-                square=True, cbar=True, ax=ax)
-
-    ax.set_title(f'Sample Distance Matrix (UV) at {led_peak_wavelengths[i]:.0f} nm')
-    ax.set_xlabel('Sample')
-    ax.set_ylabel('Sample')
+    # 凡例の設定
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
 
     plt.tight_layout()
+    plt.show()
 
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close(fig)
-    buf.seek(0)
-    return Image.open(buf)
+# for sample in sample_name:
+#     plot_core_consistency_and_similarity(cc_list, sh_list, sample_label=sample)
+for sample in sample_name:
+    cc_list = cc_dict.get(sample)
+    sh_list = sh_dict.get(sample)
+    if cc_list is not None and sh_list is not None:
+        plot_core_consistency_and_similarity(cc_list, sh_list, sample_label=sample)
+    else:
+        print(f"{sample} の解析結果が見つかりません。")
 
-def update_all(selected_sample, selected_peak):
-    # Plotlyバーグラフ
-    sensor_fig = plot_sensor_response_2d(selected_peak)
-    # 蛍光スペクトル画像
-    spectrum_img = plot_spectra(selected_sample, selected_peak)
-    # 距離行列画像
-    dist_img = plot_distance_matrix_uv(selected_peak)
-    return sensor_fig, spectrum_img, dist_img
 
-def build_ui():
-    peak_min = int(led_peak_wavelengths.min())
-    peak_max = int(led_peak_wavelengths.max())
-    step = int(np.min(np.diff(led_peak_wavelengths)))
+# %% [markdown]
+# ## コンポーネントの可視化
 
-    with gr.Blocks() as demo:
-        gr.Markdown("## 蛍光スペクトルとセンサ応答の可視化")
+# %%
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import numpy as np
 
-        with gr.Row():
-            sample_dropdown = gr.Dropdown(choices=sample_names, value=sample_names[0], label="サンプル選択")
-            peak_slider = gr.Slider(minimum=peak_min, maximum=peak_max, step=step,
-                                    value=led_peak_wavelengths[0], label="励起波長 [nm]")
+def plot_eem_with_bandpass_box(eem, ex_bands, em_bands,
+                                excitation_loading, emission_loading,
+                                rank, band_width=20, sample_label="MP"):
+    """
+    ノイズ付きEEM上に、指定コンポーネントのバンドパス波長範囲を紫の四角で重ねて表示
 
-        with gr.Row():
-            plotly_output = gr.Plot(label="センサ応答（バーグラフ）")
-            image_output = gr.Image(label="スペクトル図", type="pil")
+    Parameters:
+        eem: 2D array (ex × em)
+        ex_bands: 1D array
+        em_bands: 1D array
+        excitation_loading: 2D array (ex, rank)
+        emission_loading: 2D array (em, rank)
+        component_idx: int（何番目のコンポーネントか、0始まり）
+        band_width: float（±何nmで範囲を取るか）
+        sample_label: str
+    """
 
-        with gr.Row():
-            distance_matrix_output = gr.Image(label="距離行列（ユークリッド距離）", type="pil")
+    # EEMをプロット
+    fig, ax = plt.subplots(figsize=(6, 5))
+    im = ax.imshow(eem, origin='lower',
+                   extent=[em_bands[0], em_bands[-1],
+                           ex_bands[0], ex_bands[-1]],
+                   aspect='auto', cmap='viridis')
+    
+    for i in range(rank):
+        # ピーク波長をローディングから抽出
+        exc_idx = np.argmax(excitation_loading[:, i])
+        em_idx = np.argmax(emission_loading[:, i])
+        exc_peak = ex_bands[exc_idx]
+        em_peak = em_bands[em_idx]
 
-        # 両方の入力変更時にまとめて更新
-        sample_dropdown.change(fn=update_all, inputs=[sample_dropdown, peak_slider],
-                               outputs=[plotly_output, image_output, distance_matrix_output])
-        peak_slider.change(fn=update_all, inputs=[sample_dropdown, peak_slider],
-                           outputs=[plotly_output, image_output, distance_matrix_output])
+        # 四角の範囲（±band_width）
+        exc_min = exc_peak - band_width
+        exc_max = exc_peak + band_width
+        em_min = em_peak - band_width
+        em_max = em_peak + band_width
 
-    return demo
+        # # ローディング
+        # exc = excitation_loading[:, i]
+        # em = emission_loading[:, i]
 
-if __name__ == "__main__":
-    demo = build_ui()
-    demo.launch()
+        # # ピーク位置（最大値）インデックス → 波長
+        # exc_idx = np.argmax(exc)
+        # em_idx = np.argmax(em)
+        # exc_peak = ex_bands[exc_idx]
+        # em_peak = em_bands[em_idx]
 
+        # # 🎯 励起ローディングの標準偏差を使って band_width を決める
+        # # 重み付き平均と分散（中心波長±幅）
+        # exc_mean = np.sum(ex_bands * exc) / np.sum(exc)
+        # exc_var = np.sum(((ex_bands - exc_mean) ** 2) * exc) / np.sum(exc)
+        # band_width = np.sqrt(exc_var)   # 標準偏差
+
+        # # 四角の範囲（±1σ程度）
+        # exc_min = exc_peak - band_width
+        # exc_max = exc_peak + band_width
+        # em_min = em_peak - band_width
+        # em_max = em_peak + band_width
+
+
+        print(f"Loading_{i+1} peak ex_band: {exc_peak}")
+        
+        # 紫の四角を重ねる
+        rect = patches.Rectangle(
+            (em_min, exc_min),  # 左下角 (x, y)
+            em_max - em_min,    # 幅
+            exc_max - exc_min,  # 高さ
+            linewidth=2,
+            edgecolor='white',
+            facecolor='none'
+        )
+        ax.add_patch(rect)
+        ax.set_title(f"{sample_label} - EEM with Bandpass Box (Component {rank})")
+        ax.set_xlabel("Emission Wavelength (nm)")
+        ax.set_ylabel("Excitation Wavelength (nm)")
+        plt.tight_layout()
+    plt.colorbar(im, ax=ax, label="Fluorescence Intensity")
+    plt.show()
 
 
 # %%
-import seaborn as sns
-from scipy.spatial.distance import pdist, squareform
-import numpy as np
 import matplotlib.pyplot as plt
-import plotly.graph_objs as go
-import gradio as gr
-import io
-from PIL import Image
 
+def plot_selected_loadings(factors, rank, ex_bands, em_bands, sample_label="Sample"):
+    """
+    指定したrankのPARAFAC結果を使って、励起と発光のローディングをプロット
 
-# === Plotlyバーグラフ関数 ===
-def plot_sensor_response_2d(selected_peak):
-    led_idx = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
-    max_val = np.max(camera_response) * 1.1
+    Parameters:
+        results: list of parafac results（compute_parafac_results()の出力）
+        rank: int（表示したいコンポーネント数）
+        ex_bands: 1D array（励起波長）
+        em_bands: 1D array（発光波長）
+        sample_label: str（MPの名前など）
+    """
+    factors_rank = factors[rank - 1]  # インデックス注意：rank=1 → results[0]
+    excitation_loading, emission_loading, _ = factors_rank.factors
 
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=sample_names,
-        y=camera_response[:, led_idx],
-        text=[f"{v:.2f}" for v in camera_response[:, led_idx]],
-        textposition='auto',
-        marker_color='gray'
-    ))
-
-    fig.update_layout(
-        title=f"センサ応答（励起波長 {led_peak_wavelengths[led_idx]:.0f} nm）",
-        xaxis_title="サンプル",
-        yaxis_title="応答値",
-        width=600,
-        height=500,
-        bargap=0.1,
-        xaxis=dict(tickangle=-45),
-        yaxis=dict(range=[0, max_val])
-    )
-    return fig
-
-# 追加: 分離度プロット関数（励起波長スライダー連動）
-def plot_separability(selected_peak):
-    separability_means = []
-    separability_stds = []
-    for i in range(camera_response.shape[1]):
-        responses = camera_response[:, i].reshape(-1, 1)
-        distances = pdist(responses, metric='euclidean')
-        separability_means.append(np.mean(distances))
-        separability_stds.append(np.std(distances))
-    separability_means = np.array(separability_means)
-    separability_stds = np.array(separability_stds)
-
-    max_idx = np.argmax(separability_means)
-    best_wavelength = led_peak_wavelengths[max_idx]
-    best_score = separability_means[max_idx]
-
-    selected_idx = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.errorbar(
-        led_peak_wavelengths,
-        separability_means,
-        yerr=separability_stds,
-        fmt='-o',
-        capsize=5,
-        label='Separability (mean ± std)'
-    )
-    ax.axvline(best_wavelength, color='r', linestyle='--', label=f'Best Excitation: {best_wavelength:.0f} nm')
-    ax.scatter(best_wavelength, best_score, color='red')
-    ax.axvline(led_peak_wavelengths[selected_idx], color='blue', linestyle='-', linewidth=2, label=f'Selected: {led_peak_wavelengths[selected_idx]:.0f} nm')
-
-    ax.set_title('Separability by Excitation Wavelength (1-Channel UV Camera)')
-    ax.set_xlabel('Excitation Wavelength [nm]')
-    ax.set_ylabel('Separability')
-    ax.grid(True)
-    ax.legend()
+    # --- 励起ローディング ---
+    plt.figure(figsize=(6, 3))
+    for i in range(rank):
+        plt.plot(ex_bands, excitation_loading[:, i], label=f"Component {i+1}")
+    plt.title(f"{sample_label} - Excitation Loading (Rank {rank})")
+    plt.xlabel("Excitation Wavelength (nm)")
+    plt.ylabel("Loading Strength")
+    plt.legend()
+    plt.grid(True)
     plt.tight_layout()
+    plt.show()
 
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close(fig)
-    buf.seek(0)
-    return Image.open(buf)
-
-# --- 距離行列表示関数をGradio対応に改修 ---
-
-def plot_distance_matrix_uv(selected_peak):
-    i = int(np.argmin(np.abs(led_peak_wavelengths - selected_peak)))
-    responses = camera_response[:, i].reshape(-1, 1)
-
-    dist_vec = pdist(responses, metric='euclidean')
-    dist_mat = squareform(dist_vec)
-
-    # 下三角（対角含む）をマスク（Trueで隠す）
-    mask = np.tril(np.ones_like(dist_mat, dtype=bool))
-
-    fig, ax = plt.subplots(figsize=(6, 5))
-    sns.heatmap(dist_mat, mask=mask, cmap='viridis',
-                xticklabels=sample_names, yticklabels=sample_names,
-                square=True, cbar=True, ax=ax)
-
-    ax.set_title(f'Sample Distance Matrix (UV) at {led_peak_wavelengths[i]:.0f} nm')
-    ax.set_xlabel('Sample')
-    ax.set_ylabel('Sample')
-
+    # --- 発光ローディング ---
+    plt.figure(figsize=(6, 3))
+    for i in range(rank):
+        plt.plot(em_bands, emission_loading[:, i], label=f"Component {i+1}")
+    plt.title(f"{sample_label} - Emission Loading (Rank {rank})")
+    plt.xlabel("Emission Wavelength (nm)")
+    plt.ylabel("Loading Strength")
+    plt.legend()
+    plt.grid(True)
     plt.tight_layout()
+    plt.show()
 
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close(fig)
-    buf.seek(0)
-    return Image.open(buf)
-
-# update_allの戻り値を増やす
-def update_all(selected_sample, selected_peak):
-    sensor_fig = plot_sensor_response_2d(selected_peak)
-    spectrum_img = plot_spectra(selected_sample, selected_peak)
-    dist_img = plot_distance_matrix_uv(selected_peak)
-    separability_img = plot_separability(selected_peak)  # 追加
-    return sensor_fig, spectrum_img, dist_img, separability_img
-
-def build_ui():
-    peak_min = int(led_peak_wavelengths.min())
-    peak_max = int(led_peak_wavelengths.max())
-    step = int(np.min(np.diff(led_peak_wavelengths)))
-
-    with gr.Blocks() as demo:
-        gr.Markdown("## 蛍光スペクトルとセンサ応答の可視化")
-
-        with gr.Row():
-            sample_dropdown = gr.Dropdown(choices=sample_names, value=sample_names[0], label="サンプル選択")
-            peak_slider = gr.Slider(minimum=peak_min, maximum=peak_max, step=step,
-                                    value=led_peak_wavelengths[0], label="励起波長 [nm]")
-
-        with gr.Row():
-            plotly_output = gr.Plot(label="センサ応答（バーグラフ）")
-            image_output = gr.Image(label="スペクトル図", type="pil")
-
-        with gr.Row():
-            distance_matrix_output = gr.Image(label="距離行列（ユークリッド距離）", type="pil")
-            separability_output = gr.Image(label="励起波長別分離度プロット", type="pil")  # 横並びに変更
+    # ローディングの帯域図示化
+    plot_eem_with_bandpass_box(eem, ex_bands, em_bands,
+                            excitation_loading, emission_loading,
+                            rank, band_width=20, sample_label=sample
+                            )
 
 
-        # 出力を4つに増やし、対応させる
-        sample_dropdown.change(fn=update_all, inputs=[sample_dropdown, peak_slider],
-                               outputs=[plotly_output, image_output, distance_matrix_output, separability_output])
-        peak_slider.change(fn=update_all, inputs=[sample_dropdown, peak_slider],
-                           outputs=[plotly_output, image_output, distance_matrix_output, separability_output])
+# %%
+sample = "PET"
+rank = 1
+factors = factors_dict.get(sample)
 
-    return demo
+mp_idx = sample_name.index(sample)  # "PET" に対応するインデックス（例：0）
+eem = augmented_eems[mp_idx, 0]  # PETの最初のノイズ付きEEM（shape: 81x81）
 
-if __name__ == "__main__":
-    demo = build_ui()
-    demo.launch()
 
+if factors is not None:
+    plot_selected_loadings(
+        factors, 
+        rank,
+        ex_bands,
+        em_bands,
+        sample_label=sample
+    )
+else:
+    print(f"{sample} の解析結果が見つかりません。")
+
+
+
+# %% [markdown]
+# ---
 
 
