@@ -90,24 +90,42 @@ for data in srcdata:
     # ② 追加で散乱領域全体を除去
     eem.remove_scatter_regions(inplace=True)
 
+    
+    # 250nm以上のインデックスを取得
+    ex_mask = ex_bands >= 250
+    em_mask = em_bands >= 250
 
     eem.plot_heatmap()
     plt.title(eem.sample)
 
 
     eem_matrix = eem.mat  # numpy配列を取り出す
-    eem_matrix = np.nan_to_num(eem_matrix, nan=0.0)  # nanを0に置換
-    
-    # サンプルごとにnumpy配列に追加
-    sample_data.append(eem_matrix)
-    sample_name.append(eem.sample)
 
-    # print(eem_matrix)
+    eem_matrix = np.nan_to_num(eem.mat, nan=0.0)
+    eem_matrix_trimmed = eem_matrix[np.ix_(ex_mask, em_mask)]
+
+    sample_data.append(eem_matrix_trimmed)
+    sample_name.append(eem.sample)
 
 
 # numpy配列に保存
 eem_array = np.array(sample_data)
 print(eem_array.shape)
+
+# %% [markdown]
+# ## 波長域の調整
+
+# %%
+ex_mask = np.array(ex_bands) >= 250
+em_mask = np.array(em_bands) >= 250
+
+# trim
+ex_bands = np.array(ex_bands)[ex_mask]
+em_bands = np.array(em_bands)[em_mask]
+
+print("Excitation bands ≥ 250nm:", ex_bands)
+print("Emission bands ≥ 250nm:", em_bands)
+
 
 # %%
 import numpy as np
@@ -438,6 +456,7 @@ def plot_eem_with_bandpass_box(eem, ex_bands, em_bands,
 
 
         print(f"Loading_{i+1} peak ex_band: {exc_peak}")
+        print(f"Loading_{i+1} peak em_band: {em_peak}")
         
         # 紫の四角を重ねる
         rect = patches.Rectangle(
@@ -506,8 +525,8 @@ def plot_selected_loadings(factors, rank, ex_bands, em_bands, sample_label="Samp
 
 
 # %%
-sample = "PET"
-rank = 1
+sample = "HDPE"
+rank = 2
 factors = factors_dict.get(sample)
 
 mp_idx = sample_name.index(sample)  # "PET" に対応するインデックス（例：0）
