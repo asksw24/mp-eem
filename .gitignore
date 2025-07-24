@@ -3,6 +3,7 @@
 
 # dataフォルダ
 data/
+.gradio/
 
 # WMF形式
 *.WMF
