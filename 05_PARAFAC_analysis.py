@@ -185,6 +185,9 @@ print("上記の順番でデータは並んでいます。")
 # # 妥当性評価
 
 # %%
+max_components = 2
+
+# %%
 # %% ステップB: 横軸を見やすくしたレバレッジプロット（レイアウト調整版）
 
 import tensorly as tl
@@ -195,7 +198,7 @@ import matplotlib.pyplot as plt
 # --- この部分は変更ありません ---
 eem_array_imputed = np.nan_to_num(eem_array_normalized, nan=0.0)
 tensor = tl.tensor(np.transpose(eem_array_imputed, (1, 2, 0)))
-max_components = 7
+# max_components = 9
 component_range = range(2, max_components + 1)
 leverage_results = {}
 for n_comp in component_range:
@@ -271,7 +274,7 @@ eem_array_imputed = np.nan_to_num(eem_array_normalized, nan=0.0)
 tensor = tl.tensor(np.transpose(eem_array_imputed, (1, 2, 0)))
 
 # 試行する成分数の範囲
-max_components = 7
+# max_components = 9
 component_range = range(1, max_components + 1)
 
 
@@ -352,7 +355,7 @@ num_samples = tensor.shape[2]
 
 
 # 試行する成分数の範囲
-max_components = 7
+# max_components = 9
 component_range = range(2, max_components + 1)
 
 print("--- スプリットハーフ分析を開始します ---")
@@ -431,7 +434,7 @@ from tensorly.decomposition import non_negative_parafac
 import matplotlib.pyplot as plt
 
 # --- 最適な成分数を設定 ---
-OPTIMAL_COMPONENTS = 9
+# max_components = 9
 
 # --- 事前準備 ---
 # 以下の変数が事前に定義されている必要があります
@@ -446,8 +449,8 @@ eem_array_imputed = np.nan_to_num(eem_array_normalized, nan=0.0)
 tensor = tl.tensor(np.transpose(eem_array_imputed, (1, 2, 0)))
 
 # --- 最終モデルの計算 ---
-print(f"--- 最適な成分数 = {OPTIMAL_COMPONENTS} で最終モデルを構築します ---")
-weights, factors = non_negative_parafac(tensor, rank=OPTIMAL_COMPONENTS,
+print(f"--- 最適な成分数 = {max_components} で最終モデルを構築します ---")
+weights, factors = non_negative_parafac(tensor, rank=max_components,
                                         n_iter_max=500, tol=1e-7, init='random')
 
 # --- 結果の分解 ---
@@ -465,8 +468,8 @@ print("--- モデル構築完了 ---")
 
 # 1. 励起・蛍光ローディング（成分のスペクトル形状）のプロット
 print("\n--- 抽出された成分のスペクトルをプロットします ---")
-fig, axes = plt.subplots(OPTIMAL_COMPONENTS, 2, figsize=(12, 3 * OPTIMAL_COMPONENTS))
-for i in range(OPTIMAL_COMPONENTS):
+fig, axes = plt.subplots(max_components, 2, figsize=(12, 3 * max_components))
+for i in range(max_components):
     # 励起ローディング
     axes[i, 0].plot(ex_bands_trimmed, excitation_loadings_norm[:, i])
     axes[i, 0].set_title(f'Component {i+1} - Excitation')
@@ -484,58 +487,64 @@ plt.show()
 
 
 # %%
-# %% 最終モデルの可視化（正規化＋ピーク表示改良版）
+# %% 全成分のスペクトルを一枚の図にまとめてプロット
 
 # --- 事前準備は変更なし ---
-# (excitation_loadings, emission_loadings, sample_scores など)
+# (excitation_loadings_norm, emission_loadings_norm, sample_scores など)
 # ---
 
-print("\n--- 抽出された成分のスペクトルをプロットします（ピーク表示改良版） ---")
+print("\n--- 抽出された全成分のスペクトルを一枚の図にまとめてプロットします ---")
 
-# 各成分についてループ
-for i in range(OPTIMAL_COMPONENTS):
-    # --- 1. グラフの準備 ---
-    fig, ax1 = plt.subplots(figsize=(10, 4))
-    ax2 = ax1.twinx()
+# --- 1. グラフ全体の準備 ---
+# ループの外で、成分の数だけ縦に並ぶサブプロットを作成
+fig, axes = plt.subplots(max_components, 1, figsize=(10, 4 * max_components))
 
-    # --- 2. スペクトルのプロット (正規化されたローディングを使用) ---
+# 成分が1つの場合でも、axesがリストになるように調整
+if max_components == 1:
+    axes = [axes]
+
+# --- 2. 各成分についてループし、対応するサブプロットに描画 ---
+for i in range(max_components):
+    # 対応するサブプロット(ax1)を選択
+    ax1 = axes[i]
+    ax2 = ax1.twinx()  # 各サブプロットでY軸を共有
+
+    # --- スペクトルのプロット ---
     color1 = 'tab:blue'
     ax1.plot(ex_bands_trimmed, excitation_loadings_norm[:, i], color=color1, lw=2.5)
-    ax1.set_xlabel('Wavelength (nm)', fontsize=12)
-    ax1.set_ylabel('Ex loading (normalized)', color=color1, fontsize=12)
+    ax1.set_ylabel(f'Comp. {i+1} Ex (norm)', color=color1, fontsize=12)
     ax1.tick_params(axis='y', labelcolor=color1)
     ax1.grid(True, axis='x', linestyle='--', alpha=0.6)
 
     color2 = 'tab:red'
     ax2.plot(em_bands_trimmed, emission_loadings_norm[:, i], color=color2, lw=2.5)
-    ax2.set_ylabel('Em loading (normalized)', color=color2, fontsize=12)
+    ax2.set_ylabel(f'Comp. {i+1} Em (norm)', color=color2, fontsize=12)
     ax2.tick_params(axis='y', labelcolor=color2)
 
-    # --- 3. ピーク波長の検出と描画（表示方法を改良） ---
-    # 励起ピーク
+    # --- ピーク波長の検出と描画 ---
     ex_peak_idx = np.argmax(excitation_loadings_norm[:, i])
     ex_peak_wl = ex_bands_trimmed[ex_peak_idx]
     ax1.axvline(x=ex_peak_wl, color=color1, linestyle='--', alpha=0.8)
-    # ▼▼▼ テキストを縦書きにし、位置を調整 ▼▼▼
     ax1.text(ex_peak_wl - 3, ax1.get_ylim()[1] * 0.5, f'{ex_peak_wl:.0f} nm',
              color=color1, rotation='vertical', ha='right', va='center', fontsize=11)
 
-    # 蛍光ピーク
     em_peak_idx = np.argmax(emission_loadings_norm[:, i])
     em_peak_wl = em_bands_trimmed[em_peak_idx]
     ax2.axvline(x=em_peak_wl, color=color2, linestyle='--', alpha=0.8)
-    # ▼▼▼ テキストを縦書きにし、位置を調整 ▼▼▼
     ax2.text(em_peak_wl + 3, ax2.get_ylim()[1] * 0.5, f'{em_peak_wl:.0f} nm',
              color=color2, rotation='vertical', ha='left', va='center', fontsize=11)
-
-    # --- 4. 仕上げ ---
-    ax1.set_title(f'Component {i+1}', fontsize=14)
-    # Y軸の範囲を0からに固定して見やすくする
+    
+    # --- Y軸の範囲を0からに固定 ---
     ax1.set_ylim(bottom=0)
     ax2.set_ylim(bottom=0)
-    fig.tight_layout()
-    plt.show()
 
+# --- 3. 仕上げ ---
+# 最後のサブプロットにのみX軸のラベルを表示
+axes[-1].set_xlabel('Wavelength (nm)', fontsize=12)
+
+# 図全体のレイアウトを調整
+fig.tight_layout()
+plt.show()
     
 
 # %%
@@ -544,55 +553,64 @@ print("\n--- 各MPの成分含有量をプロットします ---")
 plt.figure(figsize=(10, 6))
 # ヒートマップで可視化
 plt.imshow(sample_scores_norm.T, cmap='viridis', aspect='auto')
-plt.yticks(ticks=np.arange(OPTIMAL_COMPONENTS), labels=[f'Component {i+1}' for i in range(OPTIMAL_COMPONENTS)])
+plt.yticks(ticks=np.arange(max_components), labels=[f'Component {i+1}' for i in range(max_components)])
 plt.xticks(ticks=np.arange(len(sample_name)), labels=sample_name, rotation=45, ha='right')
 plt.colorbar(label='Relative Concentration (normalized)')
 plt.title('Component Scores for Each Microplastic', fontsize=14)
 plt.show()
 
 # %%
-# %% 各成分のEEMをプロット
+# %% 全成分のEEMを一枚の図にまとめてプロット
 
-# --- 事前準備（最終モデルの計算結果から） ---
-# excitation_loadings: 励起ローディング
-# emission_loadings: 蛍光ローディング
-# ex_bands_trimmed: 励起波長のリスト
-# em_bands_trimmed: 蛍光波長のリスト
-# OPTIMAL_COMPONENTS: 最適な成分数
-# ---------------------------------------------
+# --- 事前準備は変更なし ---
+# (excitation_loadings, emission_loadingsなど)
+# ---
 
-print("\n--- 分離された各成分のEEMをプロットします ---")
+print("\n--- 分離された全成分のEEMを一枚の図にまとめてプロットします ---")
 
-# 各成分についてループ
-for i in range(OPTIMAL_COMPONENTS):
-    # --- 1. 外積を計算して、成分のEEMを再構成 ---
-    # np.outer() で2つのベクトルから2次元の行列を作成
+# --- 1. グラフ全体の準備 ---
+# サブプロットの行数と列数をいい感じに決める (例: 3列で表示)
+n_cols = 3
+n_rows = (max_components + n_cols - 1) // n_cols # 切り上げ除算
+fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4.5 * n_rows))
+# axesを1次元のリストにして扱いやすくする
+axes = axes.flatten()
+
+# --- 2. 各成分についてループし、対応するサブプロットに描画 ---
+for i in range(max_components):
+    ax = axes[i] # 対応するサブプロットを選択
+
+    # --- 外積を計算して、成分のEEMを再構成 ---
     component_eem = np.outer(excitation_loadings[:, i], emission_loadings[:, i])
 
-    # --- 2. グラフの準備 ---
-    fig, ax = plt.subplots(figsize=(7, 6))
-
-    # --- 3. ヒートマップとしてプロット ---
+    # --- ヒートマップとしてプロット ---
     im = ax.imshow(
-        component_eem,  
+        component_eem,
         origin='lower',
         aspect='auto',
         cmap='viridis',
-        extent=[ex_bands_trimmed[0], ex_bands_trimmed[-1], em_bands_trimmed[0], em_bands_trimmed[-1]]
+        extent=[em_bands_trimmed[0], em_bands_trimmed[-1], ex_bands_trimmed[0], ex_bands_trimmed[-1]]
     )
 
-    # --- 4. 仕上げ ---
-    ax.set_title(f'Reconstructed EEM for Component {i+1}', fontsize=14)
-    ax.set_xlabel('Excitation Wavelength (nm)', fontsize=12)
-    ax.set_ylabel('Emission Wavelength (nm)', fontsize=12)
-    fig.colorbar(im, ax=ax, label='Relative Intensity')
-    plt.show()
+    # --- 仕上げ ---
+    ax.set_title(f'Component {i+1}')
+    ax.set_xlabel('Emission (nm)')
+    ax.set_ylabel('Excitation (nm)')
+    fig.colorbar(im, ax=ax)
+
+# --- 3. 空のサブプロットを非表示にする ---
+for j in range(max_components, len(axes)):
+    axes[j].axis('off')
+
+# --- 4. 図全体のレイアウトを調整 ---
+fig.tight_layout()
+plt.show()
 
 # %% [markdown]
 # ## 残差の可視化
 
 # %%
-# %% 全サンプルの残差をプロットして検証する
+# %% 全サンプルの残差プロット（転置なし・ピーク表示付き）
 
 import numpy as np
 import tensorly as tl
@@ -607,41 +625,66 @@ import matplotlib.pyplot as plt
 # ---------------------------------------------
 
 # 1. PARAFACモデルによる再現テンソルを計算
-# tl.cp_to_tensor を使うと、ローディングとウェイトからテンソルを再構成できる
 reconstructed_tensor = tl.cp_to_tensor((weights, factors))
 
 # 2. 残差テンソルを計算
 residual_tensor = tensor - reconstructed_tensor
 
-print("--- 全サンプルの元のEEMと残差EEMをプロットします ---")
+print("--- 全サンプルの元のEEMと残差EEM（転置なし）をプロットします ---")
 
 # 3. 全てのサンプルについてループ処理
 for i, sample in enumerate(sample_name):
+
+    # 4. 対象サンプルの元のEEMと残差EEMを準備
+    original_eem = tensor[:, :, i]
+    residual_eem = residual_tensor[:, :, i]
+
+    # 5. 残差EEMのピーク位置を特定
+    peak_idx_flat = np.argmax(residual_eem)
+    peak_ex_idx, peak_em_idx = np.unravel_index(peak_idx_flat, residual_eem.shape)
     
-    # 4. 対象サンプルの元のEEMと残差EEMをプロット
+    peak_ex_wl = ex_bands_trimmed[peak_ex_idx]
+    peak_em_wl = em_bands_trimmed[peak_em_idx]
+
+    # 6. プロット作成
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
     fig.suptitle(f'Original vs. Residual EEM for: {sample}', fontsize=16)
 
-    # 元のEEM
-    original_eem = tensor[:, :, i]
+    # --- 元のEEMプロット ---
+    # ▼▼▼ .T を削除し、extentと軸ラベルを修正 ▼▼▼
     im1 = axes[0].imshow(original_eem, origin='lower', aspect='auto', cmap='viridis',
-                         extent=[ex_bands_trimmed[0], ex_bands_trimmed[-1], em_bands_trimmed[0], em_bands_trimmed[-1]])
+                         extent=[em_bands_trimmed[0], em_bands_trimmed[-1], ex_bands_trimmed[0], ex_bands_trimmed[-1]])
     axes[0].set_title('Original EEM')
-    axes[0].set_xlabel('Excitation (nm)')
-    axes[0].set_ylabel('Emission (nm)')
+    axes[0].set_xlabel('Emission (nm)')
+    axes[0].set_ylabel('Excitation (nm)')
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     fig.colorbar(im1, ax=axes[0], label='Intensity')
 
-    # 残差EEM
-    residual_eem = residual_tensor[:, :, i]
+    # --- 残差EEMプロット ---
     # vminとvmaxを元のEEMと合わせてスケールを統一
+    # ▼▼▼ .T を削除し、extentと軸ラベル、textの位置を修正 ▼▼▼
     im2 = axes[1].imshow(residual_eem, origin='lower', aspect='auto', cmap='viridis',
-                         extent=[ex_bands_trimmed[0], ex_bands_trimmed[-1], em_bands_trimmed[0], em_bands_trimmed[-1]],
+                         extent=[em_bands_trimmed[0], em_bands_trimmed[-1], ex_bands_trimmed[0], ex_bands_trimmed[-1]],
                          vmin=np.min(original_eem), vmax=np.max(original_eem))
     axes[1].set_title('Residual EEM (Model Error)')
-    axes[1].set_xlabel('Excitation (nm)')
+    axes[1].set_xlabel('Emission (nm)')
+    
+    # # ピーク位置に十字線を描画
+    # axes[1].axhline(y=peak_ex_wl, color='red', linestyle='--', alpha=0.7) # 水平線 (励起)
+    # axes[1].axvline(x=peak_em_wl, color='red', linestyle='--', alpha=0.7) # 垂直線 (蛍光)
+    
+    # # 軸上に波長を表示
+    # # Y軸（励起）
+    # axes[1].text(axes[1].get_xlim()[0], peak_ex_wl, f'{peak_ex_wl:.0f} nm ',
+    #            color='red', ha='right', va='center', weight='bold')
+    # # X軸（蛍光）
+    # axes[1].text(peak_em_wl, axes[1].get_ylim()[0], f'\n{peak_em_wl:.0f} nm',
+    #            color='red', ha='center', va='top', weight='bold')
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     fig.colorbar(im2, ax=axes[1], label='Intensity')
 
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # suptitleと重ならないように調整
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
 # %% [markdown]
