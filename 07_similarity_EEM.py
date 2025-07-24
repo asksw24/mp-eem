@@ -172,19 +172,19 @@ num_samples = 9
 ex_bands_count = 71
 em_bands_count = 71
 
-eem_array_normalized = np.random.rand(num_samples, ex_bands_count, em_bands_count) * 0.1 # 正規化後の値に近い範囲で生成
+eem_array_normalized_similarity = np.random.rand(num_samples, ex_bands_count, em_bands_count) * 0.1 # 正規化後の値に近い範囲で生成
 
 # 実際のEEMデータのように、一部にNaNが含まれる可能性を考慮（np.nan_to_numで処理されます）
 # ダミーデータに意図的にNaNを導入
 for i in range(num_samples):
     # ランダムな位置にNaNを導入（例: 2%のセル）
     nan_mask = np.random.rand(ex_bands_count, em_bands_count) < 0.02
-    eem_array_normalized[i, nan_mask] = np.nan
+    eem_array_normalized_similarity[i, nan_mask] = np.nan
 
 # # サンプル名
 # sample_name = [f"MP_Sample_{i+1}" for i in range(num_samples)]
 
-print(f"eem_array_normalized の形状: {eem_array_normalized.shape}")
+print(f"eem_array_normalized の形状: {eem_array_normalized_similarity.shape}")
 print(f"サンプル名: {sample_name}")
 
 # %% [markdown]
@@ -197,7 +197,7 @@ print("\n--- ステップ2: EEMデータの平坦化を開始します ---")
 
 # NaNを0に補完 (コサイン類似度計算がNaNを扱えないため)
 # eem_array_normalized を直接使用します
-eem_array_imputed_for_flat = np.nan_to_num(eem_array_normalized, nan=0.0)
+eem_array_imputed_for_flat = np.nan_to_num(eem_array_normalized_similarity, nan=0.0)
 
 # 各EEM (71x71行列) を1次元ベクトルに平坦化
 # 結果として (サンプル数, 励起波長数 * 蛍光波長数) の2D配列が得られます
