@@ -12,7 +12,6 @@ main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15c
 # 画像とJSONファイルのパス
 json_path = main_dir / "MPs_15cm_20250826_Ex-1_Em-1_ET300_step1.json"
 image_path = main_dir / "MPs_15cm_20250826_Ex-1_Em-1_ET300_step1.tiff"
-
 # JSONファイルを読み込む
 with open(json_path, 'r') as f:
     data = json.load(f)
@@ -186,6 +185,9 @@ else:
 # %% [markdown]
 # ---
 
+# %% [markdown]
+# ## 修正版　学習モデル
+
 # %%
 import pandas as pd
 import numpy as np
@@ -196,9 +198,7 @@ from pathlib import Path
 import re
 
 # --- ユーザーが設定する項目 ---
-# 1. すべての画像とJSONファイルが入っているフォルダのパス
 main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
-# 2. ラベル付けを行った基準画像のファイル名（拡張子なし）
 reference_file_stem = "MPs_15cm_20250826_Ex-1_Em-1_ET300_step1"
 # ------------------------------
 
@@ -212,21 +212,15 @@ except FileNotFoundError:
     print("Error: JSONファイルが見つかりません。パスを確認してください。")
     exit()
 
-# ラベル名と数値の対応辞書を一度だけ作成
 labels = sorted(list(set(shape['label'] for shape in data['shapes'])))
 label_name_to_value = {label: i for i, label in enumerate(labels, start=1)}
 label_name_to_value['_background_'] = 0
 
-# 結果を保存するリストを初期化
 all_results = []
-
-# ファイル名からExとEmの波長を抽出する新しい正規表現
 wavelength_pattern = re.compile(r'Ex(\d+)_Em(\d+)')
 
 # 2. フォルダ内の分光画像ファイルだけを対象にループ処理
-#    ファイル名に"Ex"と"Em"が含まれるtiffファイルを対象とします
 image_files = list(main_dir.glob("*Ex*_Em*.tiff"))
-# 基準画像（Em-1）は除外
 image_files = [f for f in image_files if '-1-Em-1-' not in f.stem]
 
 if not image_files:
@@ -235,37 +229,37 @@ if not image_files:
 
 print(f"\nFound {len(image_files)} spectral image files to process.")
 
-for image_path in image_files:
-    print(f"\nProcessing image: {image_path.name}")
+# 各プラスチック片にユニークなIDを付与
+shapes_with_ids = [{**shape, 'id': f"{shape['label']}_{idx}"} for idx, shape in enumerate(data['shapes'])]
 
+for image_path in image_files:
     try:
-        # ファイル名から励起波長(Ex)と放射波長(Em)を抽出
         match = wavelength_pattern.search(image_path.name)
         if not match:
             print(f"Warning: Wavelength pattern not found in {image_path.name}. Skipping.")
             continue
-        
         ex_wavelength = int(match.group(1))
         em_wavelength = int(match.group(2))
 
-        # 画像を読み込む
         img = np.asarray(Image.open(image_path))
-
-        # マスクを生成
         lbl, _ = labelme.utils.shapes_to_label(img.shape, data['shapes'], label_name_to_value)
         
-        # 各ラベルごとに画素値を抽出し、統計量を算出
-        for label_name, value in label_name_to_value.items():
-            if label_name == '_background_':
-                continue
+        # 各プラスチック片（shape）ごとに処理
+        for shape_obj in shapes_with_ids:
+            label_name = shape_obj['label']
+            shape_id = shape_obj['id']
+            label_value = label_name_to_value[label_name]
             
-            label_mask = (lbl == value)
-            pixel_values = img[label_mask]
+            # マスクを作成
+            shape_mask = (lbl == label_value)
+
+            pixel_values = img[shape_mask]
 
             if len(pixel_values) > 0:
                 result = {
                     'image_name': image_path.name,
                     'label': label_name,
+                    'shape_id': shape_id,
                     'Ex_wavelength': ex_wavelength,
                     'Em_wavelength': em_wavelength,
                     'pixel_count': len(pixel_values),
@@ -282,7 +276,7 @@ for image_path in image_files:
 # 3. すべての結果をデータフレームに整理し、CSVとして保存
 if all_results:
     df = pd.DataFrame(all_results)
-    output_csv_path = main_dir / "combined_spectral_features.csv"
+    output_csv_path = main_dir / "combined_spectral_features_with_ids.csv"
     df.to_csv(output_csv_path, index=False)
     print(f'\n全分光データの統合データセットが作成されました: {output_csv_path}')
     print('\nデータセットのプレビュー:')
@@ -293,13 +287,10 @@ else:
 # %%
 import pandas as pd
 from pathlib import Path
-from sklearn.svm import SVC
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
 
 # 作成された統合データセットのパスを指定
 main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
-output_csv_path = main_dir / "combined_spectral_features.csv"
+output_csv_path = main_dir / "combined_spectral_features_with_ids.csv"
 
 # データセットを読み込み
 try:
@@ -308,152 +299,105 @@ except FileNotFoundError:
     print(f"Error: {output_csv_path} が見つかりません。")
     exit()
 
-# 特徴量（X）とラベル（y）に分割
-# 特徴量には、波長情報と統計量を含めます
-X = df.drop(['image_name', 'label'], axis=1)
-# ラベルは 'label' 列
-y = df['label']
+# 'mean'値の列名を 'Ex' と 'Em' の波長情報を使って動的に作成
+df['feature_name'] = 'mean_' + 'Ex' + df['Ex_wavelength'].astype(str) + '_Em' + df['Em_wavelength'].astype(str)
 
-# データを訓練用とテスト用に分割
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+# 不要な列を削除
+df_pivot = df.drop(columns=['Ex_wavelength', 'Em_wavelength', 'image_name', 'pixel_count', 'std_dev', 'max_value', 'min_value'])
 
-# サポートベクターマシン（SVM）モデルを初期化
-model = SVC()
+# pivot_tableを使ってデータを「横長」に変換
+# indexに 'shape_id' と 'label' を指定して、各プラスチック片をユニークな行として扱う
+df_profile = df_pivot.pivot_table(
+    index=['shape_id', 'label'],
+    columns='feature_name',
+    values='mean',
+    aggfunc='mean'
+).reset_index()
 
-# モデルを学習
-model.fit(X_train, y_train)
+# 欠損値があれば0で埋める
+df_profile = df_profile.fillna(0)
 
-print('機械学習モデルの学習が完了しました。')
+# 新しいデータセットをCSVファイルとして保存
+profile_csv_path = main_dir / "spectral_profiles_per_piece.csv"
+df_profile.to_csv(profile_csv_path, index=False)
+
+print(f'プラスチック片ごとの分光プロファイルデータセットが作成されました: {profile_csv_path}')
+print('\nデータセットのプレビュー:')
+print(df_profile.head())
 
 # %%
 import pandas as pd
 from pathlib import Path
-from sklearn.svm import SVC
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 
-# 作成された統合データセットのパスを指定
+# 作成された分光プロファイルデータセットのパスを指定
 main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
-output_csv_path = main_dir / "combined_spectral_features.csv"
+profile_csv_path = main_dir / "spectral_profiles_per_piece.csv"
 
 # データセットを読み込み
 try:
-    df = pd.read_csv(output_csv_path)
+    df_profile = pd.read_csv(profile_csv_path)
 except FileNotFoundError:
-    print(f"Error: {output_csv_path} が見つかりません。")
+    print(f"Error: {profile_csv_path} が見つかりません。")
     exit()
 
-# 特徴量（X）とラベル（y）に分割
-X = df.drop(['image_name', 'label'], axis=1)
-y = df['label']
+# ラベルとshape_idのユニークな組み合わせを取得し、これを分割
+unique_samples = df_profile[['shape_id', 'label']].drop_duplicates()
 
-# データを訓練用とテスト用に分割
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+# 訓練用とテスト用に分割
+# ここでは、プラスチックの種類ごとにサンプルを均等に分割
+X_train_samples, X_test_samples, y_train_samples, y_test_samples = train_test_split(
+    unique_samples['shape_id'],
+    unique_samples['label'],
+    test_size=0.3,
+    random_state=42,
+    stratify=unique_samples['label']
+)
 
-# サポートベクターマシン（SVM）モデルを初期化し、学習
-model = SVC()
+# 分割したサンプルIDを使って、元のデータフレームから訓練・テストデータを抽出
+X_train = df_profile[df_profile['shape_id'].isin(X_train_samples)].drop(columns=['shape_id', 'label'])
+y_train = df_profile[df_profile['shape_id'].isin(X_train_samples)]['label']
+X_test = df_profile[df_profile['shape_id'].isin(X_test_samples)].drop(columns=['shape_id', 'label'])
+y_test = df_profile[df_profile['shape_id'].isin(X_test_samples)]['label']
+
+
+# RandomForestClassifierモデルを初期化し、学習
+model = RandomForestClassifier(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
 
 # テストデータに対する予測を実行
 y_pred = model.predict(X_test)
 
 # 精度評価レポートを表示
-print('--- 精度評価レポート ---')
+print('--- 精度評価レポート（正しい分割による評価） ---')
 print(classification_report(y_test, y_pred))
 
-# %%
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
-from PIL import Image
-from pathlib import Path
-import labelme
-import json
-from sklearn.svm import SVC
-from sklearn.model_selection import train_test_split
-import re
+# 特徴量の重要度を取得
+feature_importances = model.feature_importances_
+feature_names = X_train.columns
 
-# --- ユーザーが設定する項目 ---
-main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
-# 評価したい分光画像のファイル名（拡張子なし）
-evaluate_file_stem = "MPs_15cm_20250826_Ex260_Em280_ET20000_step1"
-# JSONファイルのパス
-json_path = main_dir / "MPs_15cm_20250826_Ex-1_Em-1_ET300_step1.json"
-# ------------------------------
+# 重要度をデータフレームに整理し、重要度が高い順に並べる
+importance_df = pd.DataFrame({
+    'feature': feature_names,
+    'importance': feature_importances
+}).sort_values('importance', ascending=False)
 
-# 1. データセットとモデルの準備
-df = pd.read_csv(main_dir / "combined_spectral_features.csv")
-X = df.drop(['image_name', 'label'], axis=1)
-y = df['label']
-model = SVC()
-model.fit(X, y)
-
-# 2. 評価したい画像の処理
-with open(json_path, 'r') as f:
-    data = json.load(f)
-labels = sorted(list(set(shape['label'] for shape in data['shapes'])))
-label_name_to_value = {label: i for i, label in enumerate(labels, start=1)}
-label_name_to_value['_background_'] = 0
-
-image_path = main_dir / (evaluate_file_stem + ".tiff")
-img = np.asarray(Image.open(image_path))
-lbl, _ = labelme.utils.shapes_to_label(img.shape, data['shapes'], label_name_to_value)
-
-# 3. 各ラベル領域の画素値からモデルで予測
-unique_labels = sorted([l for l in np.unique(lbl) if l > 0])
-label_value_to_predicted_name = {}
-
-# ファイル名から波長情報を抽出
-wavelength_pattern = re.compile(r'Ex(\d+)_Em(\d+)')
-match = wavelength_pattern.search(evaluate_file_stem)
-ex_wavelength = int(match.group(1))
-em_wavelength = int(match.group(2))
-
-for label_value in unique_labels:
-    pixel_values = img[lbl == label_value]
-    if len(pixel_values) > 0:
-        feature_vector = {
-            'Ex_wavelength': ex_wavelength,
-            'Em_wavelength': em_wavelength,
-            'pixel_count': len(pixel_values),
-            'mean': np.mean(pixel_values),
-            'std_dev': np.std(pixel_values),
-            'max_value': np.max(pixel_values),
-            'min_value': np.min(pixel_values)
-        }
-        single_df = pd.DataFrame([feature_vector])
-        predicted_class = model.predict(single_df)[0]
-        label_value_to_predicted_name[label_value] = predicted_class
-    
-# 4. 予測結果の可視化
-# 予測ラベル（文字列）を数値に変換する辞書を動的に作成
-predicted_labels = list(set(label_value_to_predicted_name.values()))
-predicted_label_to_color_index = {label: i for i, label in enumerate(predicted_labels)}
-
-# 予測結果の数値マスクを生成
-colored_mask = np.zeros(img.shape, dtype=int)
-for label_value, predicted_name in label_value_to_predicted_name.items():
-    color_index = predicted_label_to_color_index[predicted_name]
-    colored_mask[lbl == label_value] = color_index
-
-# カラーマップを生成
-colors = [
-    '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', 
-    '#00FFFF', '#FFA500', '#800080', '#A52A2A', '#000000' # 黒は背景として追加
-]
-cmap = ListedColormap(colors[:len(predicted_labels)])
-
-plt.figure(figsize=(10, 8))
-plt.imshow(img, cmap='gray')
-plt.imshow(colored_mask, cmap=cmap, alpha=0.6, vmin=0, vmax=len(predicted_labels)-1)
-plt.title(f'Predicted Plastic Types for {evaluate_file_stem}')
-plt.colorbar(ticks=range(len(predicted_labels)), label='Plastic Type')
+# 重要度を可視化
+plt.figure(figsize=(15, 8))
+plt.bar(importance_df['feature'], importance_df['importance'])
+plt.xticks(rotation=90, ha='right', fontsize=8)
+plt.title('Feature Importances based on Spectral Profiles')
+plt.ylabel('Importance Score')
+plt.tight_layout()
 plt.show()
 
-# 予測結果を表示
-print("\nPredicted Labels:")
-for label_value, predicted_name in label_value_to_predicted_name.items():
-    print(f"Original Label Value: {label_value} -> Predicted: {predicted_name}")
+print("\n特徴量の重要度ランキング（トップ10）:")
+print(importance_df.head(10))
+
+# %% [markdown]
+# ---
 
 
