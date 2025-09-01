@@ -186,7 +186,7 @@ else:
 # ---
 
 # %% [markdown]
-# ## 修正版　学習モデル
+# ## ラベル単位での分類(修正版)
 
 # %%
 import pandas as pd
@@ -399,5 +399,243 @@ print(importance_df.head(10))
 
 # %% [markdown]
 # ---
+
+# %% [markdown]
+# # ピクセル単位での分類モデル
+
+# %% [markdown]
+# ## ラベリング結果の可視化
+
+# %%
+import labelme
+import json
+import numpy as np
+from PIL import Image
+from pathlib import Path
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches # 凡例用
+from matplotlib.colors import ListedColormap
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
+reference_file_stem = "MPs_15cm_20250826_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
+# ------------------------------
+
+json_path = main_dir / (reference_file_stem + ".json")
+image_path = main_dir / (reference_file_stem + ".tiff") # ラベリングに使用した元の画像パス
+
+print(f"Loading JSON file: {json_path}")
+print(f"Loading original image: {image_path}")
+
+try:
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+except FileNotFoundError:
+    print(f"Error: JSONファイル '{json_path}' が見つかりません。")
+    exit()
+
+try:
+    original_img = np.asarray(Image.open(image_path))
+except FileNotFoundError:
+    print(f"Error: 元画像ファイル '{image_path}' が見つかりません。")
+    exit()
+
+# ラベル名と数値の対応付け
+labels = sorted(list(set(shape['label'] for shape in data['shapes'])))
+label_name_to_value = {label: i for i, label in enumerate(labels, start=1)}
+label_name_to_value['_background_'] = 0 # 背景には0を割り当てる
+
+# ラベルマップ（数値）を生成
+lbl, _ = labelme.utils.shapes_to_label(original_img.shape, data['shapes'], label_name_to_value)
+
+# 可視化用のカラーマップを生成
+# ラベル数に応じて色を割り当てる
+unique_labels = np.unique(lbl)
+colors = plt.cm.get_cmap('tab10', len(unique_labels))
+colored_mask = np.zeros((*lbl.shape, 3), dtype=np.uint8)
+legend_patches = []
+label_value_to_color = {}
+
+for i, label_value in enumerate(unique_labels):
+    if label_value == 0:
+        color = np.array([0, 0, 0])
+        label_name = 'background'
+    else:
+        # 修正: np.array()で一度配列に変換してからastype()を適用
+        color = (np.array(colors(i)[:3]) * 255).astype(np.uint8)
+        label_name = list(label_name_to_value.keys())[list(label_name_to_value.values()).index(label_value)]
+        legend_patches.append(mpatches.Patch(color=color/255., label=label_name))
+    
+    colored_mask[lbl == label_value] = color
+
+# 元画像とカラーマスクを並べて表示
+fig, axes = plt.subplots(1, 2, figsize=(15, 7))
+
+axes[0].imshow(original_img, cmap='gray')
+axes[0].set_title('Original Image')
+axes[0].axis('off')
+
+axes[1].imshow(colored_mask)
+axes[1].set_title('Labeled Mask (Pixel-wise Labels)')
+axes[1].axis('off')
+
+plt.legend(handles=legend_patches, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+plt.tight_layout(rect=[0, 0, 0.85, 1])
+plt.show()
+
+print("\n可視化されたラベリング結果を確認しました。")
+
+# %% [markdown]
+# ## データセットの生成
+
+# %%
+import pandas as pd
+import numpy as np
+import labelme
+import json
+from PIL import Image
+from pathlib import Path
+import re
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
+reference_file_stem = "MPs_15cm_20250826_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
+# ------------------------------
+
+# 1. 基準JSONファイルを読み込む
+json_path = main_dir / (reference_file_stem + ".json")
+try:
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+except FileNotFoundError:
+    print("Error: JSONファイルが見つかりません。パスを確認してください。")
+    exit()
+
+labels = sorted(list(set(shape['label'] for shape in data['shapes'])))
+label_name_to_value = {label: i for i, label in enumerate(labels, start=1)}
+label_name_to_value['_background_'] = 0
+
+# 2. すべての分光画像の画素値をピクセル単位で抽出
+wavelength_pattern = re.compile(r'Ex(\d+)_Em(\d+)')
+image_files = list(main_dir.glob("*Ex*_Em*.tiff"))
+image_files = [f for f in image_files if '-1-Em-1-' not in f.stem]
+
+if not image_files:
+    print("Error: 指定されたパターンに一致する分光画像ファイルが見つかりません。")
+    exit()
+
+pixel_features_df = pd.DataFrame()
+processed_files_count = 0
+image_size = None # 画像サイズを動的に取得するための変数
+
+for image_path in image_files:
+    try:
+        img = np.asarray(Image.open(image_path))
+        # 初回ループ時に画像サイズを取得
+        if image_size is None:
+            image_size = img.shape
+            print(f"画像サイズを検出しました: {image_size}")
+        
+        # サイズが一致しない場合はスキップ
+        if img.shape != image_size:
+            print(f"Warning: {image_path.name} のサイズが異なります。スキップします。")
+            continue
+
+        match = wavelength_pattern.search(image_path.name)
+        if not match:
+            continue
+        ex_wavelength = int(match.group(1))
+        em_wavelength = int(match.group(2))
+        
+        pixel_features_df[f'Ex{ex_wavelength}_Em{em_wavelength}'] = img.flatten()
+        processed_files_count += 1
+    except Exception as e:
+        print(f"Warning: Failed to process {image_path.name}. Reason: {e}")
+        continue
+
+if processed_files_count > 0:
+    # 3. 正解ラベルの列をデータフレームに追加
+    # 動的に取得した画像サイズでマスクを生成
+    pixel_label_mask, _ = labelme.utils.shapes_to_label(image_size, data['shapes'], label_name_to_value)
+    
+    # マスクを1次元配列に変換
+    pixel_labels_flat = pixel_label_mask.flatten()
+
+    pixel_features_df['label_value'] = pixel_labels_flat
+    pixel_features_df['label_name'] = pd.Series(pixel_labels_flat).map({v: k for k, v in label_name_to_value.items()})
+
+    # データセットをCSVとして保存
+    output_csv_path = main_dir / "pixel_features_all_data.csv"
+    pixel_features_df.to_csv(output_csv_path, index=False)
+    
+    print(f'\nピクセル単位のデータセットが作成されました: {output_csv_path}')
+    print('\nデータセットのプレビュー:')
+    print(pixel_features_df.head())
+else:
+    print("Warning: No data was successfully processed. Check your files and paths.")
+
+# %% [markdown]
+# ## 学習と波長選択(散乱光を除く)
+
+# %%
+import pandas as pd
+from pathlib import Path
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+import joblib
+
+# 作成されたピクセル単位のデータセットを読み込む
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
+output_csv_path = main_dir / "pixel_features_all_data.csv"
+
+try:
+    df_pixels = pd.read_csv(output_csv_path)
+except FileNotFoundError:
+    print(f"Error: {output_csv_path} が見つかりません。")
+    exit()
+
+# 散乱光の波長を除外する処理
+# 列名から'Ex'と'Em'の波長が同じものをフィルタリング
+scatter_light_cols = [col for col in df_pixels.columns if 'Ex' in col and 'Em' in col and col.split('_')[0].replace('Ex', '') == col.split('_')[1].replace('Em', '')]
+df_filtered = df_pixels.drop(columns=scatter_light_cols)
+
+df_labeled_only = df_filtered[df_filtered['label_name'] != '_background_']
+
+if df_labeled_only.empty:
+    print("Warning: データセットにラベル付けされたプラスチックのピクセルがありません。")
+    exit()
+
+X = df_labeled_only.drop(columns=['label_value', 'label_name'])
+y = df_labeled_only['label_name']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
+
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+model_save_path = main_dir / "random_forest_model_no_scatter.joblib"
+joblib.dump(model, model_save_path)
+print(f"\n学習済みモデルを保存しました: {model_save_path}")
+
+y_pred = model.predict(X_test)
+print('--- 精度評価レポート（散乱光除去後） ---')
+print(classification_report(y_test, y_pred))
+
+feature_importances = model.feature_importances_
+feature_names = X.columns
+importance_df = pd.DataFrame({
+    'feature': feature_names,
+    'importance': feature_importances
+}).sort_values('importance', ascending=False)
+print("\n特徴量の重要度ランキング（トップ10）:")
+print(importance_df.head(10))
+
+# %% [markdown]
+# ---
+# # 選択した波長の分光画像からの画像分類
+
+# %% [markdown]
+# ## データセットの作成
 
 
