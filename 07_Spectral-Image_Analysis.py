@@ -286,8 +286,8 @@ from pathlib import Path
 import re
 
 # --- ユーザーが設定する項目 ---
-# main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
-# reference_file_stem = "MPs_15cm_20250826_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
+reference_file_stem = "MPs_15cm_20250826_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
 # ------------------------------
 
 # 1. 基準JSONファイルを読み込む
@@ -365,7 +365,7 @@ if processed_files_count > 0:
     print(f"背景を除外しました: {before_rows - after_rows} 行削除, 残り {after_rows} 行")
 
     # データセットをCSVとして保存
-    output_csv_path = main_dir / "pixel_features_no_background.csv"
+    output_csv_path = main_dir / "pixel_featur,es_no_background.csv"
     pixel_features_df.to_csv(output_csv_path, index=False)
     
     print(f'\nピクセル単位のデータセットが作成されました: {output_csv_path}')
@@ -732,5 +732,335 @@ plt.show()
 
 # %% [markdown]
 # ---
+
+# %% [markdown]
+# ## t-SNE
+
+# %%
+import pandas as pd
+import numpy as np
+import json
+from PIL import Image
+from pathlib import Path
+import re
+from skimage import measure # 連結成分ラベリングに使用
+import labelme
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
+reference_file_stem = "MPs_20250905_2_Ex-1_Em-1_ET300_step1"
+# ------------------------------
+
+
+# %%
+# === ステップ1: ラベル定義とユニークIDマスクの作成 ===
+print("ステップ1: JSONファイルを読み込み、ユニークIDマスクを作成します...")
+json_path = main_dir / (reference_file_stem + ".json")
+try:
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+except FileNotFoundError:
+    print(f"Error: JSONファイル '{json_path}' が見つかりません。")
+    exit()
+
+# ラベル名と値の対応を定義
+labels = sorted(list(set(shape['label'] for shape in data['shapes'])))
+label_name_to_value = {label: i for i, label in enumerate(labels, start=1)}
+label_name_to_value['_background_'] = 0
+
+# クラス単位のラベルマスクを作成
+image_size = (data['imageHeight'], data['imageWidth'])
+class_label_mask, _ = labelme.utils.shapes_to_label(image_size, data['shapes'], label_name_to_value)
+
+# 連結成分ラベリングで各プラスチック片にユニークID（インスタンスID）を割り振る
+instance_mask = np.zeros_like(class_label_mask, dtype=int)
+instance_id_counter = 1
+instance_info = [] # 各IDの情報を保存するリスト
+
+for label_name, label_value in label_name_to_value.items():
+    if label_name == '_background_':
+        continue
+    
+    binary_mask = (class_label_mask == label_value)
+    labeled_components, num_components = measure.label(binary_mask, connectivity=2, background=0, return_num=True)
+
+    for i in range(1, num_components + 1):
+        instance_mask[labeled_components == i] = instance_id_counter
+        instance_info.append({
+            'instance_id': instance_id_counter,
+            'label_name': label_name
+        })
+        instance_id_counter += 1
+
+num_instances = instance_id_counter - 1
+if num_instances > 0:
+    print(f"合計 {num_instances} 個のプラスチック片を検出しました。")
+else:
+    print("Error: プラスチック片が検出されませんでした。JSONファイルを確認してください。")
+    exit()
+    
+
+# %%
+# === ステップ2: 各分光画像を読み込み、プラスチック片ごとに画素値の平均を計算 ===
+print("\nステップ2: 分光画像を処理し、平均スペクトルを計算します...")
+wavelength_pattern = re.compile(r'Ex(\d+)_Em(\d+)')
+image_files = list(main_dir.glob("*.tiff"))
+results = {i: {'instance_id': i} for i in range(1, num_instances + 1)}
+
+for image_path in image_files:
+    # フィルタなし・1次散乱光のデータを除外（元のコードのロジックを流用）
+    if '-1_Em-1' in image_path.stem:
+        continue
+    match = wavelength_pattern.search(image_path.name)
+    if not match:
+        continue
+    ex_wavelength = int(match.group(1))
+    em_wavelength = int(match.group(2))
+    if ex_wavelength == em_wavelength:
+        continue
+
+    # 画像を読み込み
+    try:
+        img = np.asarray(Image.open(image_path))
+    except Exception as e:
+        print(f"Warning: {image_path.name} の読み込みに失敗しました。理由: {e}")
+        continue
+
+    # 各インスタンスID（プラスチック片）領域の画素値の平均を計算
+    for i in range(1, num_instances + 1):
+        mean_intensity = np.mean(img[instance_mask == i])
+        column_name = f'Ex{ex_wavelength}_Em{em_wavelength}'
+        results[i][column_name] = mean_intensity
+
+print("すべての画像の処理が完了しました。")
+
+
+# %%
+# === ステップ3: 結果をDataFrameにまとめて保存 ===
+print("\nステップ3: 結果をDataFrameにまとめて保存します...")
+# 結果をDataFrameに変換
+final_df = pd.DataFrame.from_dict(results, orient='index')
+
+# ラベル情報を結合
+instance_info_df = pd.DataFrame(instance_info)
+final_df = final_df.merge(instance_info_df, on='instance_id')
+
+# 列の順番を整理
+cols_to_move = ['instance_id', 'label_name']
+final_df = final_df[cols_to_move + [col for col in final_df.columns if col not in cols_to_move]]
+
+# 結果を保存
+output_path = main_dir / "csv" / "sample_average_spectra.csv"
+final_df.to_csv(output_path, index=False)
+
+print(f"\nプラスチック片単位のデータセットが作成されました: {output_path}")
+print("\nデータセットのプレビュー:")
+print(final_df.head())
+
+
+# %% [markdown]
+# t-SNEの実行
+
+# %%
+import pandas as pd
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
+input_csv_name = "sample_average_spectra.csv"
+# ------------------------------
+
+# 1. 作成したデータセットを読み込む
+file_path = main_dir / "csv" / input_csv_name
+try:
+    df = pd.read_csv(file_path)
+except FileNotFoundError:
+    print(f"Error: データセットファイル '{file_path}' が見つかりません。")
+    exit()
+
+print("データセットの読み込みが完了しました。")
+print(f"データ形状: {df.shape[0]} サンプル × {df.shape[1]} 特徴")
+
+# 2. t-SNEで使う特徴量（スペクトルデータ）とラベルを分離する
+labels = df['label_name']
+features = df.drop(columns=['instance_id', 'label_name'])
+
+# 3. t-SNEモデルを定義し、計算を実行する
+print("\nt-SNEの計算を開始します...（データ量によっては時間がかかります）")
+tsne = TSNE(
+    n_components=2,     # 2次元に削減
+    perplexity=5,       # データセット内のサンプル数に応じて調整（サンプルが18個と少ないため小さめに設定）
+    n_iter=1000,        # 最適化の繰り返し回数
+    random_state=42     # 結果を固定するためのシード値
+)
+tsne_results = tsne.fit_transform(features)
+print("t-SNEの計算が完了しました。")
+
+# 4. 結果をプロット（可視化）する
+print("\n結果をプロットします...")
+df_tsne = pd.DataFrame(tsne_results, columns=['tsne-2d-one', 'tsne-2d-two'])
+df_tsne['label'] = labels
+
+plt.figure(figsize=(12, 8))
+sns.scatterplot(
+    x="tsne-2d-one", y="tsne-2d-two",
+    hue="label",
+    palette=sns.color_palette("hsv", len(df['label_name'].unique())), # ラベルの数だけ色を自動で用意
+    data=df_tsne,
+    legend="full",
+    alpha=1,
+    s=150
+)
+
+plt.title('t-SNE Plot of Plastic Samples')
+plt.xlabel('t-SNE Dimension 1')
+plt.ylabel('t-SNE Dimension 2')
+plt.grid(True)
+plt.show()
+
+# %%
+import pandas as pd
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # 3Dプロットのために追加
+import seaborn as sns
+from pathlib import Path
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
+input_csv_name = "sample_average_spectra.csv"
+# ------------------------------
+
+# 1. 作成したデータセットを読み込む
+file_path = main_dir / "csv" / input_csv_name
+try:
+    df = pd.read_csv(file_path)
+except FileNotFoundError:
+    print(f"Error: データセットファイル '{file_path}' が見つかりません。")
+    exit()
+
+print("データセットの読み込みが完了しました。")
+print(f"データ形状: {df.shape[0]} サンプル × {df.shape[1]} 特徴")
+
+# 2. t-SNEで使う特徴量（スペクトルデータ）とラベルを分離する
+labels = df['label_name']
+features = df.drop(columns=['instance_id', 'label_name'])
+
+# 3. t-SNEモデルを定義し、計算を実行する
+print("\n3D t-SNEの計算を開始します...")
+tsne = TSNE(
+    n_components=3,     # ★★★ 3次元に削減 ★★★
+    perplexity=5,
+    n_iter=1000,
+    random_state=42
+)
+tsne_results = tsne.fit_transform(features)
+print("t-SNEの計算が完了しました。")
+
+# 4. 3Dで結果をプロット（可視化）する
+print("\n結果を3Dでプロットします...")
+df_tsne = pd.DataFrame(tsne_results, columns=['tsne-3d-one', 'tsne-3d-two', 'tsne-3d-three'])
+df_tsne['label'] = labels
+
+# ラベルごとに色をマッピング
+unique_labels = labels.unique()
+palette = sns.color_palette("hsv", len(unique_labels))
+color_map = {label: color for label, color in zip(unique_labels, palette)}
+df_tsne['color'] = df_tsne['label'].map(color_map)
+
+# 3Dプロットの準備
+fig = plt.figure(figsize=(13, 10))
+ax = fig.add_subplot(111, projection='3d')
+
+# 3D散布図を作成
+ax.scatter(
+    xs=df_tsne['tsne-3d-one'],
+    ys=df_tsne['tsne-3d-two'],
+    zs=df_tsne['tsne-3d-three'],
+    c=df_tsne['color'],
+    alpha=1
+)
+
+# 軸ラベルとタイトルを設定
+ax.set_xlabel('t-SNE Dimension 1')
+ax.set_ylabel('t-SNE Dimension 2')
+ax.set_zlabel('t-SNE Dimension 3')
+ax.set_title('3D t-SNE Plot of Plastic Samples')
+
+# 凡例を作成
+legend_elements = [plt.Line2D([0], [0], marker='o', color='w', label=label,
+                          markerfacecolor=color, markersize=8) for label, color in color_map.items()]
+ax.legend(handles=legend_elements, title="Plastics")
+
+plt.show()
+
+# %%
+import pandas as pd
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
+# ★★★ 読み込むファイルをピクセル単位のCSVに変更 ★★★
+input_csv_name = "pixel_features_no_background.csv" 
+# ------------------------------
+
+# 1. ピクセル単位のデータセットを読み込む
+file_path = main_dir / input_csv_name
+df = pd.read_csv(file_path)
+
+print("データセットの読み込みが完了しました。")
+print(f"データ形状: {df.shape[0]} サンプル × {df.shape[1]} 特徴")
+
+# 2. 特徴量とラベルを分離する
+labels = df['label_name']
+# ★★★ ピクセル単位のCSVには 'instance_id' がないので削除 ★★★
+features = df.drop(columns=['label_value', 'label_name']) 
+
+# 3. t-SNEモデルを定義し、計算を実行する
+print("\nt-SNEの計算を開始します...（データ量が多いため非常に時間がかかります）")
+tsne = TSNE(
+    n_components=2,
+    # ★★★ データ点数が増えたため、Perplexityを調整 ★★★
+    perplexity=30, 
+    n_iter=1000,
+    random_state=42
+)
+tsne_results = tsne.fit_transform(features)
+
+print("t-SNEの計算が完了しました。")
+
+# 4. 結果をプロット（可視化）する
+print("\n結果をプロットします...")
+df_tsne = pd.DataFrame(tsne_results, columns=['tsne-2d-one', 'tsne-2d-two'])
+df_tsne['label'] = labels
+
+plt.figure(figsize=(12, 8))
+sns.scatterplot(
+    x="tsne-2d-one", y="tsne-2d-two",
+    hue="label",
+    palette=sns.color_palette("hsv", len(df['label_name'].unique())), # ラベルの数だけ色を自動で用意
+    data=df_tsne,
+    legend="full",
+    alpha=1,
+    s=150
+)
+
+plt.title('t-SNE Plot of Plastic Samples')
+plt.xlabel('t-SNE Dimension 1')
+plt.ylabel('t-SNE Dimension 2')
+plt.grid(True)
+plt.show()
+
+# %% [markdown]
+# 
+
+# %% [markdown]
+# 
 
 
