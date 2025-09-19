@@ -303,97 +303,97 @@ from PIL import Image
 from pathlib import Path
 import re
 
-# # --- ユーザーが設定する項目 ---
-# main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
-# reference_file_stem = "MPs_15cm_20250826_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
-# # ------------------------------
+# --- ユーザーが設定する項目 ---
+# main_dir や reference_file_stem はご自身の環境に合わせて設定してください
+# folder_name = "MPs_20250911"
+folder_name = "MPs_20250905_2"
+main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
+reference_file_stem = f"{folder_name}_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名
+# ------------------------------
 
-# 1. 基準JSONファイルを読み込む
+# 1. 基準となるJSONファイルを読み込む
 json_path = main_dir / (reference_file_stem + ".json")
 try:
     with open(json_path, 'r') as f:
         data = json.load(f)
 except FileNotFoundError:
-    print("Error: JSONファイルが見つかりません。パスを確認してください。")
+    print(f"エラー: JSONファイルが見つかりません。パスを確認してください: {json_path}")
     exit()
 
-labels = sorted(list(set(shape['label'] for shape in data['shapes'])))
-label_name_to_value = {label: i for i, label in enumerate(labels, start=1)}
-label_name_to_value['_background_'] = 0
-
-# 2. すべての分光画像の画素値をピクセル単位で抽出
+# 2. すべての分光画像の画素値をピクセル単位で抽出 (この部分は変更なし)
 wavelength_pattern = re.compile(r'Ex(\d+)_Em(\d+)')
-image_files = list(main_dir.glob("*.tiff")) # フィルタなし画像もglobで取得
-
+image_files = list(main_dir.glob("*.tiff"))
 if not image_files:
-    print("Error: 指定されたパターンに一致する分光画像ファイルが見つかりません。")
+    print("エラー: TIFF画像ファイルが見つかりません。")
     exit()
 
 pixel_features_df = pd.DataFrame()
-processed_files_count = 0
-image_size = None
+image_size = (data['imageHeight'], data['imageWidth'])
+print(f"画像サイズを検出しました: {image_size}")
 
 for image_path in image_files:
-    # フィルタなしの画像を除外
     if '-1_Em-1' in image_path.stem:
-        print(f"Skipping filter-less image: {image_path.name}")
         continue
-    
     match = wavelength_pattern.search(image_path.name)
     if not match:
         continue
-
     ex_wavelength = int(match.group(1))
     em_wavelength = int(match.group(2))
-
-    # 1次散乱光のデータを除外
     if ex_wavelength == em_wavelength:
-        print(f"Skipping primary scattered light: {image_path.name}")
         continue
 
     try:
         img = np.asarray(Image.open(image_path))
-        if image_size is None:
-            image_size = img.shape
-            print(f"画像サイズを検出しました: {image_size}")
-        
-        if img.shape != image_size:
-            print(f"Warning: {image_path.name} のサイズが異なります。スキップします。")
+        if img.shape[:2] != image_size:
+            print(f"警告: {image_path.name} のサイズが異なります。スキップします。")
             continue
-        
         pixel_features_df[f'Ex{ex_wavelength}_Em{em_wavelength}'] = img.flatten()
-        processed_files_count += 1
     except Exception as e:
-        print(f"Warning: Failed to process {image_path.name}. Reason: {e}")
+        print(f"警告: {image_path.name} の処理に失敗しました。理由: {e}")
         continue
 
-if processed_files_count > 0:
-    # 3. 正解ラベルの列をデータフレームに追加
-    pixel_label_mask, _ = labelme.utils.shapes_to_label(image_size, data['shapes'], label_name_to_value)
-    
-    pixel_labels_flat = pixel_label_mask.flatten()
+# 3. ★★★ ラベル情報の処理方法を修正 ★★★
+print("\nスペクトルデータの抽出が完了しました。ラベル情報を結合・整形します...")
 
-    pixel_features_df['label_value'] = pixel_labels_flat
-    pixel_features_df['label_name'] = pd.Series(pixel_labels_flat).map({v: k for k, v in label_name_to_value.items()})
+# 3-1. JSON内のラベルにのみ数値を割り当て（未ラベル領域はデフォルトで0になる）
+labels_in_json = sorted(list(set(shape['label'] for shape in data['shapes'])))
+label_name_to_value = {label: i for i, label in enumerate(labels_in_json, start=1)}
 
+# 3-2. ラベルマスクを生成
+pixel_label_mask, _ = labelme.utils.shapes_to_label(image_size, data['shapes'], label_name_to_value)
+pixel_labels_flat = pixel_label_mask.flatten()
 
-    before_rows = len(pixel_features_df)
-    pixel_features_df = pixel_features_df[pixel_features_df['label_name'] != 'other'].reset_index(drop=True)
-    after_rows = len(pixel_features_df)
-    print(f"otherラベルの行を除外しました: {before_rows - after_rows} 行削除, 残り {after_rows} 行")
+# 3-3. 数値とラベル名を対応付け（0は「未ラベル」とする）
+value_to_label_name = {v: k for k, v in label_name_to_value.items()}
+value_to_label_name[0] = '_unlabeled_' # ラベル付けされていない領域を明示的に命名
 
-    # データセットをCSVとして保存
-    output_csv_path = main_dir / "csv" / "pixel_features_with_background.csv"
-    # 親ディレクトリが存在しない場合は作成
-    output_csv_path.parent.mkdir(parents=True, exist_ok=True)
+pixel_features_df['label_name'] = pd.Series(pixel_labels_flat).map(value_to_label_name)
 
-    pixel_features_df.to_csv(output_csv_path, index=False)
-    
-    print(f'\nピクセル単位のデータセットが作成されました: {output_csv_path}')
-    print('\nデータセットのプレビュー:')
-    print(pixel_features_df.head())
-else:
-    print("Warning: No data was successfully processed. Check your files and paths.")
+# 3-4. 不要なラベルを持つピクセルを除外
+initial_rows = len(pixel_features_df)
+labels_to_exclude = ['other', '_unlabeled_']
+pixel_features_df = pixel_features_df[~pixel_features_df['label_name'].isin(labels_to_exclude)].copy()
+
+# 3-5. 'background_ref' を 'background' に名称変更
+if 'background_ref' in pixel_features_df['label_name'].unique():
+    pixel_features_df['label_name'] = pixel_features_df['label_name'].replace({'background_ref': 'background'})
+    print("'background_ref' を 'background' に名称変更しました。")
+
+final_rows = len(pixel_features_df)
+print(f"除外対象 {labels_to_exclude} を持つピクセルを削除しました。")
+print(f"処理後の総ピクセル数: {final_rows} (削除されたピクセル数: {initial_rows - final_rows})")
+
+# 4. データセットをCSVとして保存
+output_dir = main_dir / "csv"
+output_dir.mkdir(parents=True, exist_ok=True)
+output_csv_path = output_dir / "pixel_features_with_background.csv"
+pixel_features_df.to_csv(output_csv_path, index=False)
+
+print(f'\n新しいデータセットが作成されました: {output_csv_path}')
+print('\nデータセットのプレビュー:')
+print(pixel_features_df.head())
+print('\n含まれるラベル一覧:')
+print(pixel_features_df['label_name'].unique())
 
 # %% [markdown]
 # ----
@@ -464,9 +464,6 @@ print(f"t-SNE計算完了。実行時間: {end_time - start_time:.2f} 秒")
 print("\n結果をプロットします...")
 df_tsne = pd.DataFrame(tsne_results, columns=['tsne-2d-one', 'tsne-2d-two'])
 df_tsne['label'] = labels
-
-# ★★★ 変更点1: プロット用に'_background_'を'background'に名称変更 ★★★
-df_tsne['label'] = df_tsne['label'].replace({'_background_': 'background'})
 
 # 6-1. ユニークなラベル名を取得し、ソート
 unique_labels = sorted(df_tsne['label'].unique())
