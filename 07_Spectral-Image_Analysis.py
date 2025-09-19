@@ -8,12 +8,20 @@ import json
 from PIL import Image
 from pathlib import Path
 
+# --- ユーザーが設定する項目 ---
+# folder_name = "MPs_20250911"
+folder_name = "MPs_20250905_2"
+
 # プロジェクトのメインディレクトリとファイル名を指定
-main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
-file_stem = "MPs_20250905_2_Ex-1_Em-1_ET300_step1"
+file_stem =f"{folder_name}_Ex-1_Em-1_ET300_step1"
+main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
+reference_file_stem = f"{folder_name}_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
 
 json_path = main_dir / (file_stem + ".json")
 image_path = main_dir / (file_stem + ".tiff")
+#-------------------------------------------------------------------
+
+
 
 # JSONファイルを読み込む
 with open(json_path, 'r') as f:
@@ -72,12 +80,12 @@ from PIL import Image
 import json
 from pathlib import Path
 
-# プロジェクトのメインディレクトリ
-main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
+# # プロジェクトのメインディレクトリ
+# main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
 
-# 画像とJSONファイルのパス
-json_path = main_dir / "MPs_20250905_2_Ex-1_Em-1_ET300_step1.json"
-image_path = main_dir / "MPs_20250905_2_Ex-1_Em-1_ET300_step1.tiff"
+# # 画像とJSONファイルのパス
+# json_path = main_dir / "MPs_20250905_2_Ex-1_Em-1_ET300_step1.json"
+# image_path = main_dir / "MPs_20250905_2_Ex-1_Em-1_ET300_step1.tiff"
 # JSONファイルを読み込む
 with open(json_path, 'r') as f:
     data = json.load(f)
@@ -121,7 +129,7 @@ from pathlib import Path
 # 基準画像のパス
 # reference_image_path = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2/MPs_20250905_2_Ex-1_Em-1_ET300_step1.tiff")
 # 比較したい分光画像のパス（例）
-spectral_image_path = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2/MPs_20250905_2_Ex360_Em480_ET10000_step1.tiff")
+spectral_image_path = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}/{folder_name}_Ex360_Em480_ET10000_step1.tiff")
 
 # 画像を読み込み
 try:
@@ -204,10 +212,17 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches # 凡例用
 from matplotlib.colors import ListedColormap
 
+
 # --- ユーザーが設定する項目 ---
-main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
-reference_file_stem = "MPs_20250905_2_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
-# ------------------------------
+# folder_name = "MPs_20250911"
+folder_name = "MPs_20250905_2"
+
+# プロジェクトのメインディレクトリとファイル名を指定
+file_stem =f"{folder_name}_Ex-1_Em-1_ET300_step1"
+main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
+reference_file_stem = f"{folder_name}_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
+#-------------------------------------------------------------------
+
 
 json_path = main_dir / (reference_file_stem + ".json")
 image_path = main_dir / (reference_file_stem + ".tiff") # ラベリングに使用した元の画像パス
@@ -276,6 +291,9 @@ print("\n可視化されたラベリング結果を確認しました。")
 # %% [markdown]
 # ## データセットの生成
 
+# %% [markdown]
+# ### background情報あり
+
 # %%
 import pandas as pd
 import numpy as np
@@ -285,10 +303,10 @@ from PIL import Image
 from pathlib import Path
 import re
 
-# --- ユーザーが設定する項目 ---
-main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
-reference_file_stem = "MPs_15cm_20250826_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
-# ------------------------------
+# # --- ユーザーが設定する項目 ---
+# main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
+# reference_file_stem = "MPs_15cm_20250826_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
+# # ------------------------------
 
 # 1. 基準JSONファイルを読み込む
 json_path = main_dir / (reference_file_stem + ".json")
@@ -358,14 +376,17 @@ if processed_files_count > 0:
     pixel_features_df['label_value'] = pixel_labels_flat
     pixel_features_df['label_name'] = pd.Series(pixel_labels_flat).map({v: k for k, v in label_name_to_value.items()})
 
-    # --- 背景を除外 ---
+
     before_rows = len(pixel_features_df)
-    pixel_features_df = pixel_features_df[pixel_features_df['label_name'] != '_background_'].reset_index(drop=True)
+    pixel_features_df = pixel_features_df[pixel_features_df['label_name'] != 'other'].reset_index(drop=True)
     after_rows = len(pixel_features_df)
-    print(f"背景を除外しました: {before_rows - after_rows} 行削除, 残り {after_rows} 行")
+    print(f"otherラベルの行を除外しました: {before_rows - after_rows} 行削除, 残り {after_rows} 行")
 
     # データセットをCSVとして保存
-    output_csv_path = main_dir / "pixel_featur,es_no_background.csv"
+    output_csv_path = main_dir / "csv" / "pixel_features_with_background.csv"
+    # 親ディレクトリが存在しない場合は作成
+    output_csv_path.parent.mkdir(parents=True, exist_ok=True)
+
     pixel_features_df.to_csv(output_csv_path, index=False)
     
     print(f'\nピクセル単位のデータセットが作成されました: {output_csv_path}')
@@ -374,9 +395,864 @@ if processed_files_count > 0:
 else:
     print("Warning: No data was successfully processed. Check your files and paths.")
 
+# %% [markdown]
+# ----
 
 # %% [markdown]
-# ## 学習と波長選択(1次散乱光、フィルタなし画像を除く)
+# # t-SNE データセットの可視化
+
+# %%
+import pandas as pd
+from pathlib import Path
+import numpy as np
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+import seaborn as sns
+import time
+
+# --- ユーザー設定 (ここだけ編集してください) ---
+# ★ 解析したいデータフォルダ名を設定
+folder_name = "MPs_20250911"
+# ----------------------------------------------
+
+
+# 1. パスの設定とCSVファイルの読み込み
+main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
+input_csv_path = main_dir / "csv" / "pixel_features_with_background.csv"
+
+print(f"データファイルを読み込みます: {input_csv_path}")
+df = pd.read_csv(input_csv_path)
+label_column = 'label_name'
+if label_column not in df.columns:
+    print(f"\n--- エラー ---")
+    print(f"読み込んだCSVファイルに '{label_column}' 列が存在しません。")
+    exit()
+
+print("\nデータ読み込み成功。")
+
+# 3. 各クラスから均等にデータをサンプリング
+n_samples_per_class = 2000
+print(f"\n各クラスから最大 {n_samples_per_class} 点をサンプリングします...")
+
+sampled_dfs = []
+for label in df[label_column].unique():
+    group = df[df[label_column] == label]
+    sample = group.sample(n=min(len(group), n_samples_per_class), random_state=42)
+    sampled_dfs.append(sample)
+sampled_df = pd.concat(sampled_dfs).reset_index(drop=True)
+print(f"サンプリング後のデータセットサイズ: {len(sampled_df)} ピクセル")
+
+# 4. データの前処理
+labels = sampled_df[label_column]
+columns_to_drop = [label_column]
+if 'label_value' in sampled_df.columns:
+    columns_to_drop.append('label_value')
+features = sampled_df.drop(columns=columns_to_drop)
+scaler = StandardScaler()
+features_scaled = scaler.fit_transform(features)
+
+# 5. t-SNEの計算
+print("\nt-SNEの計算を開始します...")
+start_time = time.time()
+tsne = TSNE(n_components=2, perplexity=30, random_state=42, n_iter=1000)
+tsne_results = tsne.fit_transform(features_scaled)
+end_time = time.time()
+print(f"t-SNE計算完了。実行時間: {end_time - start_time:.2f} 秒")
+
+# 6. 結果の可視化
+print("\n結果をプロットします...")
+df_tsne = pd.DataFrame(tsne_results, columns=['tsne-2d-one', 'tsne-2d-two'])
+df_tsne['label'] = labels
+
+# ★★★ 変更点1: プロット用に'_background_'を'background'に名称変更 ★★★
+df_tsne['label'] = df_tsne['label'].replace({'_background_': 'background'})
+
+# 6-1. ユニークなラベル名を取得し、ソート
+unique_labels = sorted(df_tsne['label'].unique())
+
+# 6-2. カラーパレットを準備
+plastic_colors = plt.cm.get_cmap('tab10', len(unique_labels))
+
+# 6-3. ラベル名と色を対応付ける辞書を作成
+color_map = {}
+plastic_color_index = 0
+for label in unique_labels:
+    # ★★★ 変更点2: チェックする名前を'background'に変更 ★★★
+    if label == 'background':
+        color_map[label] = 'lightgray'
+    else:
+        color_map[label] = plastic_colors(plastic_color_index)
+        plastic_color_index += 1
+
+# 6-4. プロットの実行
+plt.style.use('seaborn-v0_8-whitegrid')
+plt.figure(figsize=(16, 10))
+ax = sns.scatterplot(
+    x="tsne-2d-one", y="tsne-2d-two",
+    hue="label",
+    hue_order=unique_labels,
+    palette=color_map,
+    data=df_tsne,
+    legend="full",
+    # ★★★ ここを変更 ★★★
+    alpha=1.0,  # 点を不透明に変更 (0.7 -> 1.0)
+    s=50        # 点のサイズを大きく変更 (20 -> 50)
+)
+
+plt.title(f't-SNE Plot of Spectral Data (Sampled from {folder_name})', fontsize=16)
+plt.xlabel('t-SNE Dimension 1', fontsize=12)
+plt.ylabel('t-SNE Dimension 2', fontsize=12)
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+plt.tight_layout(rect=[0, 0, 0.85, 1])
+plt.show()
+
+# %%
+import pandas as pd
+from pathlib import Path
+import numpy as np
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+import seaborn as sns
+import time
+
+# --- ユーザー設定 (ここだけ編集してください) ---
+# ★ 解析したいデータフォルダ名を設定
+folder_name = "MPs_20250905_2"
+# ----------------------------------------------
+
+
+# 1. パスの設定とCSVファイルの読み込み
+main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
+input_csv_path = main_dir / "csv" / "pixel_features_with_background.csv"
+
+print(f"データファイルを読み込みます: {input_csv_path}")
+df = pd.read_csv(input_csv_path)
+label_column = 'label_name'
+if label_column not in df.columns:
+    print(f"\n--- エラー ---")
+    print(f"読み込んだCSVファイルに '{label_column}' 列が存在しません。")
+    exit()
+
+print("\nデータ読み込み成功。")
+
+# 3. 各クラスから均等にデータをサンプリング
+n_samples_per_class = 2000
+print(f"\n各クラスから最大 {n_samples_per_class} 点をサンプリングします...")
+
+sampled_dfs = []
+for label in df[label_column].unique():
+    group = df[df[label_column] == label]
+    sample = group.sample(n=min(len(group), n_samples_per_class), random_state=42)
+    sampled_dfs.append(sample)
+sampled_df = pd.concat(sampled_dfs).reset_index(drop=True)
+print(f"サンプリング後のデータセットサイズ: {len(sampled_df)} ピクセル")
+
+# 4. データの前処理
+labels = sampled_df[label_column]
+columns_to_drop = [label_column]
+if 'label_value' in sampled_df.columns:
+    columns_to_drop.append('label_value')
+features = sampled_df.drop(columns=columns_to_drop)
+scaler = StandardScaler()
+features_scaled = scaler.fit_transform(features)
+
+# 5. t-SNEの計算
+print("\nt-SNEの計算を開始します...")
+start_time = time.time()
+tsne = TSNE(n_components=2, perplexity=30, random_state=42, n_iter=1000)
+tsne_results = tsne.fit_transform(features_scaled)
+end_time = time.time()
+print(f"t-SNE計算完了。実行時間: {end_time - start_time:.2f} 秒")
+
+# 6. 結果の可視化
+print("\n結果をプロットします...")
+df_tsne = pd.DataFrame(tsne_results, columns=['tsne-2d-one', 'tsne-2d-two'])
+df_tsne['label'] = labels
+
+# ★★★ 変更点1: プロット用に'_background_'を'background'に名称変更 ★★★
+df_tsne['label'] = df_tsne['label'].replace({'_background_': 'background'})
+
+# 6-1. ユニークなラベル名を取得し、ソート
+unique_labels = sorted(df_tsne['label'].unique())
+
+# 6-2. カラーパレットを準備
+plastic_colors = plt.cm.get_cmap('tab10', len(unique_labels))
+
+# 6-3. ラベル名と色を対応付ける辞書を作成
+color_map = {}
+plastic_color_index = 0
+for label in unique_labels:
+    # ★★★ 変更点2: チェックする名前を'background'に変更 ★★★
+    if label == 'background':
+        color_map[label] = 'lightgray'
+    else:
+        color_map[label] = plastic_colors(plastic_color_index)
+        plastic_color_index += 1
+
+# 6-4. プロットの実行
+plt.style.use('seaborn-v0_8-whitegrid')
+plt.figure(figsize=(16, 10))
+ax = sns.scatterplot(
+    x="tsne-2d-one", y="tsne-2d-two",
+    hue="label",
+    hue_order=unique_labels,
+    palette=color_map,
+    data=df_tsne,
+    legend="full",
+    # ★★★ ここを変更 ★★★
+    alpha=1.0,  # 点を不透明に変更 (0.7 -> 1.0)
+    s=50        # 点のサイズを大きく変更 (20 -> 50)
+)
+
+plt.title(f't-SNE Plot of Spectral Data (Sampled from {folder_name})', fontsize=16)
+plt.xlabel('t-SNE Dimension 1', fontsize=12)
+plt.ylabel('t-SNE Dimension 2', fontsize=12)
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+plt.tight_layout(rect=[0, 0, 0.85, 1])
+plt.show()
+
+# %% [markdown]
+# ----
+# # 2つのデータセットを用いた交差検証
+
+# %%
+import pandas as pd
+from pathlib import Path
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+import joblib
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+dataset1_folder_name = "MPs_20250911"
+dataset2_folder_name = "MPs_20250905_2"
+# ------------------------------
+
+# データセットのパスを定義
+dataset1_csv_path = main_dir / dataset1_folder_name / "csv" / "pixel_features_with_background.csv"
+dataset2_csv_path = main_dir / dataset2_folder_name / "csv" / "pixel_features_with_background.csv"
+
+# データセット1を読み込む
+try:
+    df1 = pd.read_csv(dataset1_csv_path)
+    print(f"データセット1を正常に読み込みました: {dataset1_csv_path}")
+except FileNotFoundError:
+    print(f"エラー: {dataset1_csv_path} が見つかりません。")
+    exit()
+
+# データセット2を読み込む
+try:
+    df2 = pd.read_csv(dataset2_csv_path)
+    print(f"データセット2を正常に読み込みました: {dataset2_csv_path}")
+except FileNotFoundError:
+    print(f"エラー: {dataset2_csv_path} が見つかりません。")
+    exit()
+
+# %%
+import pandas as pd
+from pathlib import Path
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+import joblib
+# import time
+
+def prepare_data(df):
+    """背景データを含め、特徴量とラベルに分割するヘルパー関数"""
+    if df.empty:
+        raise ValueError("データセットにピクセルデータがありません。")
+    X = df.drop(columns=['label_value', 'label_name'])
+    y = df['label_name']
+    return X, y
+
+def train_and_save(X_train, y_train, model_save_path):
+    print("\n--- ランダムフォレストモデルの学習を開始 ---")
+    
+    # モデルの学習
+    # 修正点: class_weight='balanced' を追加
+    model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced')
+    model.fit(X_train, y_train)
+    
+    # モデルの保存
+    joblib.dump(model, model_save_path)
+
+    print(f"学習済みモデルを保存しました: {model_save_path}")
+    
+    return model
+
+# データセットの読み込み (前のセクションで定義されたパスを使用)
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+dataset1_folder_name = "MPs_20250911"
+dataset2_folder_name = "MPs_20250905_2"
+dataset1_csv_path = main_dir / dataset1_folder_name / "csv" / "pixel_features_with_background.csv"
+dataset2_csv_path = main_dir / dataset2_folder_name / "csv" / "pixel_features_with_background.csv"
+
+df1 = pd.read_csv(dataset1_csv_path)
+df2 = pd.read_csv(dataset2_csv_path)
+
+X1, y1 = prepare_data(df1)
+X2, y2 = prepare_data(df2)
+
+# モデル1を学習・保存
+train_and_save(X1, y1, main_dir / "model_trained_on_dataset1.joblib")
+print(f"データセット1（{dataset1_folder_name}）学習完了")
+
+
+# モデル2を学習・保存
+train_and_save(X2, y2, main_dir / "model_trained_on_dataset2.joblib")
+print(f"データセット2（{dataset2_folder_name}）学習完了")
+
+# %%
+import pandas as pd
+from pathlib import Path
+from sklearn.metrics import classification_report
+import joblib
+import time
+
+def prepare_data(df):
+    """背景データを含め、特徴量とラベルに分割するヘルパー関数"""
+    if df.empty:
+        raise ValueError("データセットにピクセルデータがありません。")
+    X = df.drop(columns=['label_value', 'label_name'])
+    y = df['label_name']
+    return X, y
+
+def evaluate_model(model_path, X_test, y_test, model_name):
+    print(f"\n--- {model_name}の評価を開始 ---")
+    start_time = time.time()
+    
+    # モデルの読み込み
+    model = joblib.load(model_path)
+    
+    # 評価
+    y_pred = model.predict(X_test)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    print('--- 精度評価レポート ---')
+    print(classification_report(y_test, y_pred))
+    print(f"評価が完了しました。実行時間: {elapsed_time:.2f}秒")
+    
+    # 特徴量重要度を計算
+    feature_importances = model.feature_importances_
+    feature_names = X_test.columns
+    importance_df = pd.DataFrame({
+        'feature': feature_names,
+        'importance': feature_importances
+    }).sort_values('importance', ascending=False)
+    
+    return importance_df, model # 修正点: importance_df と model を返すように変更
+
+# データセットの読み込み
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+dataset1_folder_name = "MPs_20250911"
+dataset2_folder_name = "MPs_20250905_2"
+dataset1_csv_path = main_dir / dataset1_folder_name / "csv" / "pixel_features_with_background.csv"
+dataset2_csv_path = main_dir / dataset2_folder_name / "csv" / "pixel_features_with_background.csv"
+
+df1 = pd.read_csv(dataset1_csv_path)
+df2 = pd.read_csv(dataset2_csv_path)
+
+X1, y1 = prepare_data(df1)
+X2, y2 = prepare_data(df2)
+
+# 交差検証1: モデル1を評価
+# evaluate_model関数の返り値を model1 に格納
+importance1, model1 = evaluate_model(main_dir / "model_trained_on_dataset1.joblib", X2, y2, "モデル1 (Dataset1で学習)")
+
+# 交差検証2: モデル2を評価
+# evaluate_model関数の返り値を model2 に格納
+importance2, model2 = evaluate_model(main_dir / "model_trained_on_dataset2.joblib", X1, y1, "モデル2 (Dataset2で学習)")
+
+
+# --- 結果を保存するコードブロック ---
+# この部分で model1 と model2 変数が使用可能になっている
+data1_output_dir = main_dir / dataset1_folder_name
+data2_output_dir = main_dir / dataset2_folder_name
+
+# output_dir.mkdir(parents=True, exist_ok=True)
+
+# 精度レポートをテキストファイルとして保存
+# 交差検証1の結果
+with open(data1_output_dir / "classification_report_model1.txt", "w") as f:
+    f.write(classification_report(y2, model1.predict(X2)))
+
+# 交差検証2の結果
+with open(data2_output_dir / "classification_report_model2.txt", "w") as f:
+    f.write(classification_report(y1, model2.predict(X1)))
+
+# 特徴量重要度をCSVファイルとして保存
+importance1.to_csv(data1_output_dir / "csv" / "importance_from_dataset.csv", index=False)
+importance2.to_csv(data2_output_dir / "csv" / "importance_from_dataset.csv", index=False)
+
+print("\n--- 全ての処理が完了しました ---")
+print(f"精度レポートと重要度ランキングは保存されました")
+
+# %%
+# # --- 結果を保存するコードブロック ---
+# output_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/results")
+# output_dir.mkdir(parents=True, exist_ok=True)
+
+# # 精度レポートをテキストファイルとして保存
+# # 交差検証1の結果
+# with open(output_dir / "classification_report_model1.txt", "w") as f:
+#     f.write(classification_report(y2, model1.predict(X2)))
+
+# # 交差検証2の結果
+# with open(output_dir / "classification_report_model2.txt", "w") as f:
+#     f.write(classification_report(y1, model2.predict(X1)))
+
+# # 特徴量重要度をCSVファイルとして保存
+# importance1.to_csv(output_dir / "importance_from_dataset1.csv", index=False)
+# importance2.to_csv(output_dir / "importance_from_dataset2.csv", index=False)
+
+# print("\n--- 全ての処理が完了しました ---")
+# print(f"精度レポートと重要度ランキングは以下のディレクトリに保存されました: {output_dir}")
+
+# %% [markdown]
+# ## 分類結果の可視化
+
+# %%
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from PIL import Image
+import joblib
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import json
+import labelme
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+# 評価に使用するデータセットのフォルダ名（テストデータとしてMPs_20250905_2を使用）
+test_dataset_folder_name = "MPs_20250905_2" 
+# 学習済みモデルのパス（Dataset1で学習し、resultsフォルダに保存したもの）
+model_path = main_dir / "model_trained_on_dataset1.joblib"
+# ------------------------------
+
+# 1. データの準備とモデルの読み込み
+print("--- データの準備 ---")
+
+# ラベル名と色を対応付けるための辞書を定義
+label_to_color_map = {
+    "ABS": "red", "HDPE": "blue", "LDPE": "green", "PC": "yellow", "PET": "purple",
+    "PMMA": "orange", "PP": "cyan", "PS": "magenta", "PVC": "lime", "_background_": "gray"
+}
+
+# モデルを読み込み、学習に使用された全波長を取得
+model = joblib.load(model_path)
+feature_names = model.feature_names_in_
+
+# 評価対象の全波長データセットを読み込む
+test_data_path = main_dir / test_dataset_folder_name / "csv" / "pixel_features_with_background.csv"
+try:
+    df_test = pd.read_csv(test_data_path, index_col=0) # 修正点：index_col=0 を追加
+except FileNotFoundError:
+    print(f"エラー: {test_data_path} が見つかりません。パスを確認してください。")
+    exit()
+
+# 特徴量（X_test）を準備
+X_test = df_test[feature_names]
+
+# 元画像のパスを取得（可視化用）
+reference_image_path = main_dir / test_dataset_folder_name / f"{test_dataset_folder_name}_Ex-1_Em-1_ET300_step1.tiff"
+original_image = np.asarray(Image.open(reference_image_path))
+json_path = main_dir / test_dataset_folder_name / f"{test_dataset_folder_name}_Ex-1_Em-1_ET300_step1.json"
+
+# 2. モデルによるピクセルごとの分類
+print("\n--- ピクセルごとのラベルを予測 ---")
+y_pred = model.predict(X_test)
+print("予測が完了しました。")
+
+# 3. JSONファイルから完全なマスクを生成し、可視化
+print("\n--- 予測結果の可視化 ---")
+
+# 元画像の形状（高さと幅）を取得
+img_height, img_width = original_image.shape
+
+# 予測結果を画像全体にマッピング
+y_pred_full = np.array([''] * (img_height * img_width), dtype=object) # 空の文字列で初期化
+y_pred_full[df_test.index] = y_pred
+
+# JSONからotherラベルを特定
+with open(json_path, 'r') as f:
+    json_data = json.load(f)
+
+label_name_to_value = {"_background_": 0}
+for shape in json_data["shapes"]:
+    label_name = shape["label"]
+    if label_name not in label_name_to_value:
+        label_name_to_value[label_name] = len(label_name_to_value)
+
+full_mask, _ = labelme.utils.shapes_to_label(
+    original_image.shape, json_data["shapes"], label_name_to_value
+)
+
+# カラーマスクの生成
+predicted_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+
+for label_name, color_name in label_to_color_map.items():
+    indices = np.where(y_pred_full == label_name)[0]
+    color_rgb = (np.array(plt.cm.colors.to_rgb(color_name)) * 255).astype(np.uint8)
+    predicted_mask.reshape(-1, 3)[indices] = color_rgb
+
+# otherラベルの領域を黒く塗りつぶす
+other_indices = np.where(full_mask == label_name_to_value.get('other', -1))[0]
+predicted_mask.reshape(-1, 3)[other_indices] = [0, 0, 0]
+
+# 図の作成と表示
+fig, axes = plt.subplots(1, 2, figsize=(15, 7))
+
+axes[0].imshow(original_image, cmap='gray')
+axes[0].set_title('Original Image')
+axes[0].axis('off')
+
+axes[1].imshow(predicted_mask)
+axes[1].set_title('Predicted Labels (from Dataset1 model)')
+axes[1].axis('off')
+
+# 凡例の作成
+legend_patches = []
+for label_name, color in label_to_color_map.items():
+    legend_patches.append(mpatches.Patch(color=color, label=label_name))
+plt.legend(handles=legend_patches, bbox_to_anchor=(1.05, 1), loc='upper left')
+
+plt.tight_layout()
+plt.show()
+
+print("\n可視化が完了しました。")
+
+# %%
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from PIL import Image
+import joblib
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import re
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+# 評価に使用するデータセットのフォルダ名（テストデータとしてMPs_20250911を使用）
+test_dataset_folder_name = "MPs_20250911" 
+# 学習済みモデルのパス（Dataset2で学習し、resultsフォルダに保存したもの）
+model_path = main_dir / "model_trained_on_dataset2.joblib"
+# ------------------------------
+
+# 1. データの準備とモデルの読み込み
+print("--- データの準備 ---")
+
+# ラベル名と色を対応付けるための辞書を定義
+label_to_color_map = {
+    "ABS": "red", "HDPE": "blue", "LDPE": "green", "PC": "yellow", "PET": "purple",
+    "PMMA": "orange", "PP": "cyan", "PS": "magenta", "PVC": "lime", "_background_": "gray"
+}
+labels = list(label_to_color_map.keys())
+
+# モデルを読み込み、学習に使用された全波長を取得
+model = joblib.load(model_path)
+feature_names = model.feature_names_in_
+
+# 評価対象の全波長データセットを読み込む
+test_data_path = main_dir / test_dataset_folder_name / "csv" / "pixel_features_with_background.csv"
+try:
+    df_test = pd.read_csv(test_data_path)
+except FileNotFoundError:
+    print(f"エラー: {test_data_path} が見つかりません。パスを確認してください。")
+    exit()
+
+# 特徴量（X_test）を準備
+X_test = df_test[feature_names]
+
+# 元画像のパスを取得（可視化用）
+reference_image_path = main_dir / test_dataset_folder_name / f"{test_dataset_folder_name}_Ex-1_Em-1_ET300_step1.tiff"
+original_image = np.asarray(Image.open(reference_image_path))
+
+# 2. モデルによるピクセルごとの分類
+print("\n--- ピクセルごとのラベルを予測 ---")
+y_pred = model.predict(X_test)
+print("予測が完了しました。")
+
+# 3. 予測結果をカラーマスクとして可視化
+print("\n--- 予測結果の可視化 ---")
+
+# 元画像の形状（高さと幅）を取得
+img_height, img_width = original_image.shape
+
+# 予測結果からカラーマスクを生成
+predicted_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+
+# ラベル名と色をマッピングし、マスクに適用
+for label_name, color_name in label_to_color_map.items():
+    indices = np.where(y_pred == label_name)[0]
+    color_rgb = (np.array(plt.cm.colors.to_rgb(color_name)) * 255).astype(np.uint8)
+    
+    # 予測マスクの作成
+    predicted_mask.reshape(-1, 3)[indices] = color_rgb
+
+# 図の作成と表示
+fig, axes = plt.subplots(1, 2, figsize=(15, 7))
+
+# 1. 元画像の表示
+axes[0].imshow(original_image, cmap='gray')
+axes[0].set_title('Original Image')
+axes[0].axis('off')
+
+# 2. 予測結果の可視化
+axes[1].imshow(predicted_mask)
+axes[1].set_title('Predicted Labels (from Dataset2 model)')
+axes[1].axis('off')
+
+# 凡例の作成
+legend_patches = []
+for label_name, color in label_to_color_map.items():
+    legend_patches.append(mpatches.Patch(color=color, label=label_name))
+plt.legend(handles=legend_patches, bbox_to_anchor=(1.05, 1), loc='upper left')
+
+plt.tight_layout()
+plt.show()
+
+print("\n可視化が完了しました。")
+
+# %% [markdown]
+# ---
+
+# %% [markdown]
+# # 上位10個の分光画像のみを使用して交差検証
+# 
+
+# %%
+import pandas as pd
+from pathlib import Path
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+import joblib
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+dataset1_folder_name = "MPs_20250911"
+dataset2_folder_name = "MPs_20250905_2"
+
+dataset1_dir = main_dir / dataset1_folder_name
+dataset2_dir = main_dir / dataset2_folder_name
+
+n_features = 10  # 上位何個の波長を使うか指定
+#-------------------------------------------------------------------
+
+# print(Path(data1_output_dir / "importance_from_dataset.csv"))
+
+def create_filtered_dataset(dataset_dir, n_features):
+    """
+    指定されたフォルダの重要度ランキングから上位N波長を抽出し、
+    新しいデータセットを生成する関数
+    """
+    importance_csv_path = dataset_dir / "importance_from_dataset.csv"
+    pixel_features_all_data_path = dataset_dir / "csv" / "pixel_features_with_background.csv"
+
+    # importance_csv_path = dataset_dir / "csv" / "importance_from_dataset.csv"
+    # pixel_features_all_data_path = dataset_dir / "csv" / "pixel_features_with_background.csv"
+
+    # 特徴量重要度ランキングを読み込み
+    importance_df = pd.read_csv(importance_csv_path)
+    # 上位 n_features の波長名を取得
+    top_features = importance_df['feature'].head(n_features).tolist()
+
+    # ピクセル単位データを読み込み
+    df_pixels = pd.read_csv(pixel_features_all_data_path)
+
+    # 必要な列だけ抽出
+    df_selected = df_pixels[['label_value', 'label_name'] + top_features]
+    
+    print(f"上位{n_features}波長で新しいデータセットを作成しました。: {importance_csv_path}")
+    print(f"選択された波長: {top_features}")
+    
+    return df_selected
+
+# データセット1と2を、それぞれの上位10波長でフィルタリング
+df_selected1 = create_filtered_dataset(dataset1_dir, n_features)
+df_selected2 = create_filtered_dataset(dataset2_dir, n_features)
+
+print("\n--- 全てのデータセットのフィルタリングが完了しました ---\n")
+
+# %%
+def prepare_data(df):
+    """背景データを含め、特徴量とラベルに分割するヘルパー関数"""
+    if df.empty:
+        raise ValueError("データセットにピクセルデータがありません。")
+    X = df.drop(columns=['label_value', 'label_name'])
+    y = df['label_name']
+    return X, y
+
+def train_and_evaluate(X_train, y_train, X_test, y_test, model_name):
+    print(f"--- {model_name}の学習と評価 ---")
+    
+    # 訓練データとテストデータで波長の列を揃える
+    common_features = list(set(X_train.columns) & set(X_test.columns))
+    X_train = X_train[common_features]
+    X_test = X_test[common_features]
+
+    # ランダムフォレストモデルの学習
+    model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced')
+    model.fit(X_train, y_train)
+    
+    # 評価
+    y_pred = model.predict(X_test)
+    print('--- 精度評価レポート ---')
+    print(classification_report(y_test, y_pred))
+
+    return model
+
+# データセット1と2を学習・評価用に分割
+try:
+    X1, y1 = prepare_data(df_selected1)
+    X2, y2 = prepare_data(df_selected2)
+except ValueError as e:
+    print(f"エラー: {e}")
+    exit()
+
+# 交差検証1: Dataset1で学習し、Dataset2でテスト
+model1 = train_and_evaluate(X1, y1, X2, y2, "モデル1 (Dataset1で学習)")
+
+# 交差検証2: Dataset2で学習し、Dataset1でテスト
+model2 = train_and_evaluate(X2, y2, X1, y1, "モデル2 (Dataset2で学習)")
+
+# %%
+# モデルの保存
+output_dir1 = dataset1_dir / "results_top10_features"
+output_dir1.mkdir(parents=True, exist_ok=True)
+
+joblib.dump(model1, output_dir1 / "model_trained_on_dataset1.joblib")
+print(f"学習済みモデルは以下のディレクトリに保存されました: {output_dir1}")
+
+
+output_dir2 = dataset1_dir / "results_top10_features"
+output_dir2.mkdir(parents=True, exist_ok=True)
+
+joblib.dump(model2, output_dir2 / "model_trained_on_dataset2.joblib")
+print(f"学習済みモデルは以下のディレクトリに保存されました: {output_dir2}")
+
+
+print("\n--- 全ての処理が完了しました ---")
+
+# %% [markdown]
+# ---
+# ## 可視化
+
+# %%
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from PIL import Image
+import joblib
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.colors import ListedColormap
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+test_dataset_folder_name = "MPs_20250911" 
+
+# 評価に使用するモデルのパス（例：Dataset2で学習したモデル）
+model_path = main_dir / test_dataset_folder_name / "results_top10_features" / "model_trained_on_dataset2.joblib"
+# ------------------------------
+
+# 1. データの準備とモデルの読み込み
+print("--- データの準備 ---")
+
+# ラベル名と色を対応付けるための辞書を定義
+label_to_color_map = {
+    "ABS": "red",
+    "HDPE": "blue",
+    "LDPE": "green",
+    "PC": "yellow",
+    "PET": "purple",
+    "PMMA": "orange",
+    "PP": "cyan",
+    "PS": "magenta",
+    "PVC": "lime",
+    "_background_": "gray"
+}
+labels = list(label_to_color_map.keys())
+
+# 特徴量抽出に必要な波長リストを取得
+model = joblib.load(model_path)
+feature_names = model.feature_names_in_
+
+# 評価対象のデータセットを読み込む
+test_data_path = main_dir / test_dataset_folder_name / "csv" / "pixel_features_top10_wavelengths_with_background.csv"
+try:
+    df_test = pd.read_csv(test_data_path)
+except FileNotFoundError:
+    print(f"エラー: {test_data_path} が見つかりません。パスを確認してください。")
+    exit()
+
+# 2. モデルによる予測
+print("\n--- ピクセルごとのラベルを予測 ---")
+# 特徴量（X）と正解ラベル（y）に分割
+X_test = df_test[feature_names]
+y_true = df_test['label_name']
+y_pred = model.predict(X_test)
+print("予測が完了しました。")
+
+# 3. 予測結果の可視化
+print("\n--- 予測結果の可視化 ---")
+
+# 元画像のパスを取得（可視化用）
+reference_image_path = main_dir / test_dataset_folder_name / f"{test_dataset_folder_name}_Ex-1_Em-1_ET300_step1.tiff"
+original_image = np.asarray(Image.open(reference_image_path))
+
+# 元画像の形状（高さと幅）を取得
+img_height, img_width = original_image.shape
+
+# 予測結果からカラーマスクを生成
+pred_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+true_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+
+# ラベル名と色をマッピング
+for i, label_name in enumerate(labels):
+    color = plt.cm.get_cmap('jet', len(labels))(i)
+    color_rgb = (np.array(color[:3]) * 255).astype(np.uint8)
+    
+    # 予測マスクの作成
+    pred_indices = np.where(y_pred == label_name)[0]
+    pred_mask.reshape(-1, 3)[pred_indices] = color_rgb
+
+    # 正解マスクの作成
+    true_indices = np.where(y_true == label_name)[0]
+    true_mask.reshape(-1, 3)[true_indices] = color_rgb
+
+# 図の作成
+fig, axes = plt.subplots(1, 3, figsize=(20, 10))
+
+# 1. 元画像の表示
+axes[0].imshow(original_image, cmap='gray')
+axes[0].set_title('Original Image')
+axes[0].axis('off')
+
+# 2. 予測結果の可視化
+axes[1].imshow(pred_mask)
+axes[1].set_title('Predicted Labels')
+axes[1].axis('off')
+
+# 3. 正解ラベルの可視化
+axes[2].imshow(true_mask)
+axes[2].set_title('True Labels')
+axes[2].axis('off')
+
+# 凡例の作成
+legend_patches = []
+for label_name, color in label_to_color_map.items():
+    legend_patches.append(mpatches.Patch(color=color, label=label_name))
+plt.legend(handles=legend_patches, bbox_to_anchor=(1.05, 1), loc='upper left')
+
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
+# ----
 
 # %%
 import pandas as pd
@@ -387,11 +1263,14 @@ from sklearn.metrics import classification_report
 import joblib
 
 # # --- ユーザーが設定する項目 ---
-# main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+dataset1_folder_name = "MPs_20250911"
+dataset2_folder_name = "MPs_20250905_2"
 # # ------------------------------
 
 # 作成されたピクセル単位のデータセットを読み込む
-output_csv_path = main_dir / "pixel_features_all_data.csv"
+dataset1_csv_path = main_dir / dataset1_folder_name / "csv" / "pixel_features_with_background.csv"
+dataset2_csv_path = main_dir / dataset1_folder_name / "csv" / "pixel_features_with_background.csv"
 
 try:
     df_pixels = pd.read_csv(output_csv_path)
@@ -444,7 +1323,7 @@ importance_df = pd.DataFrame({
 }).sort_values('importance', ascending=False)
 
 # 保存先を指定
-importance_csv_path = main_dir / "csv" / "selected_wavelengths_importance.csv"
+importance_csv_path = main_dir / "csv" /"selected_wavelengths_importance_with_background.csv"
 # 親ディレクトリが存在しない場合は作成
 importance_csv_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -455,10 +1334,6 @@ print("\n上位5件の特徴量:")
 print(importance_df.head())
 
 
-# %%
-print("\n特徴量の重要度ランキング（トップ10）:")
-print(importance_df.head(10))
-
 # %% [markdown]
 # ---
 # # 選択した波長の分光画像からの画像分類
@@ -466,16 +1341,29 @@ print(importance_df.head(10))
 # %% [markdown]
 # ## データセットの作成
 
+# %% [markdown]
+# ### 背景あり
+
 # %%
 import pandas as pd
 from pathlib import Path
 
-# # --- ユーザーが設定する項目 ---
-# main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_15cm_20250826")
+# --- ユーザーが設定する項目 ---
+folder_name = "MPs_20250911"
+# folder_name = "MPs_20250905_2"
+
+# プロジェクトのメインディレクトリとファイル名を指定
+file_stem =f"{folder_name}_Ex-1_Em-1_ET300_step1"
+main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
+reference_file_stem = f"{folder_name}_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
+
 n_features = 10  # 上位何個の波長を使うか指定
+importance_csv_path = main_dir / "csv" / "selected_wavelengths_importance_with_background.csv"  # 波長選択の結果
+pixel_features_all_data_path = main_dir / "csv" / "pixel_features_with_background.csv"  #  ラベル域の全データセット
+#-------------------------------------------------------------------
+
 
 # 1. 特徴量重要度ランキングを読み込み
-importance_csv_path = main_dir / "csv" / "selected_wavelengths_importance.csv"
 importance_df = pd.read_csv(importance_csv_path)
 
 # 上位 n_features の波長名を取得
@@ -483,7 +1371,6 @@ top_features = importance_df['feature'].head(n_features).tolist()
 print(f"選択された上位 {n_features} 波長: {top_features}")
 
 # 2. ピクセル単位データを読み込み
-pixel_features_all_data_path = main_dir / "pixel_features_all_data.csv"
 df_pixels = pd.read_csv(pixel_features_all_data_path)
 
 # 背景を除外（ラベル名が _background_ の行を削除）
@@ -493,7 +1380,7 @@ df_labeled_only = df_pixels[df_pixels['label_name'] != '_background_']
 df_selected = df_labeled_only[['label_value', 'label_name'] + top_features]
 
 # 4. 保存
-output_csv_path = main_dir / f"pixel_features_top{n_features}_wavelengths.csv"
+output_csv_path = main_dir / "csv" / f"pixel_features_top{n_features}_wavelengths_with_background.csv"
 df_selected.to_csv(output_csv_path, index=False)
 print(f"データセットを保存しました: {output_csv_path}")
 print(df_selected.head())
@@ -513,6 +1400,68 @@ print(df_selected.head())
 print("\n=== ラベルごとのピクセル数 ===")
 print(df_selected['label_name'].value_counts())
 
+
+# %% [markdown]
+# ### 背景なし
+
+# %%
+import pandas as pd
+from pathlib import Path
+
+# --- ユーザーが設定する項目 ---
+# folder_name = "MPs_20250911"
+folder_name = "MPs_20250905_2"
+
+# プロジェクトのメインディレクトリとファイル名を指定
+file_stem =f"{folder_name}_Ex-1_Em-1_ET300_step1"
+main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
+reference_file_stem = f"{folder_name}_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名（拡張子なし）
+
+n_features = 10 # 上位何個の波長を使うか指定
+importance_csv_path = main_dir / "csv" / "selected_wavelengths_importance_no_background.csv" # 波長選択の結果
+pixel_features_all_data_path = main_dir / "csv" / "pixel_features_no_background.csv" #  ラベル域の全データセット
+#-------------------------------------------------------------------
+
+# 1. 特徴量重要度ランキングを読み込み
+try:
+    importance_df = pd.read_csv(importance_csv_path)
+except FileNotFoundError:
+    print(f"Error: {importance_csv_path} が見つかりません。")
+    exit()
+
+# 上位 n_features の波長名を取得
+top_features = importance_df['feature'].head(n_features).tolist()
+print(f"選択された上位 {n_features} 波長: {top_features}")
+
+# 2. ピクセル単位データを読み込み
+try:
+    df_pixels = pd.read_csv(pixel_features_all_data_path)
+except FileNotFoundError:
+    print(f"Error: {pixel_features_all_data_path} が見つかりません。")
+    exit()
+
+# 背景データを含めるため、背景除外処理をスキップ
+df_labeled_only = df_pixels.copy()
+
+# 3. 必要な列だけ抽出
+df_selected = df_labeled_only[['label_value', 'label_name'] + top_features]
+
+# 4. 保存
+output_csv_path = main_dir / "csv" / f"pixel_features_top{n_features}_wavelengths_no_background.csv"
+output_csv_path.parent.mkdir(parents=True, exist_ok=True)
+df_selected.to_csv(output_csv_path, index=False)
+print(f"データセットを保存しました: {output_csv_path}")
+
+
+# --- プレビュー表示 ---
+print("\n=== データセット情報 ===")
+print(f"全体のサイズ: {df_selected.shape[0]} サンプル, {df_selected.shape[1]} 列")
+
+print("\n=== 先頭5行 ===") 
+print(df_selected.head())
+
+print("\n=== ラベルごとのピクセル数 ===")
+print(df_selected['label_name'].value_counts())
 
 # %% [markdown]
 # ## RandomForestで学習・評価
@@ -558,18 +1507,18 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 
 # --- ユーザー設定 ---
-main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
-reference_file_stem = "MPs_20250905_2_Ex-1_Em-1_ET300_step1"   # 元画像（JSON・tiff）の基準
-visualize_file_stem = "MPs_20250905_2_Ex260_Em280_ET10000_step1"  # 可視化対象画像
+# main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
+# reference_file_stem = "MPs_20250905_2_Ex-1_Em-1_ET300_step1"   # 元画像（JSON・tiff）の基準
+visualize_file_stem = f"{folder_name}_Ex260_Em280_ET10000_step1"  # 可視化対象画像
+pixel_features_all_data_path = main_dir / "csv" / "pixel_features_no_background.csv"
 
-top_features = [
-    'Ex360_Em380', 'Ex320_Em360', 'Ex380_Em420', 'Ex260_Em360', 'Ex300_Em380',
-    'Ex360_Em460', 'Ex300_Em360', 'Ex280_Em380', 'Ex340_Em380', 'Ex340_Em400'
-]
+# top_features = [
+#     'Ex360_Em380', 'Ex320_Em360', 'Ex380_Em420', 'Ex260_Em360', 'Ex300_Em380',
+#     'Ex360_Em460', 'Ex300_Em360', 'Ex280_Em380', 'Ex340_Em380', 'Ex340_Em400'
+# ]
 # --------------------
 
 # 1. データ読み込み
-pixel_features_all_data_path = main_dir / "pixel_features_all_data.csv"
 df_pixels = pd.read_csv(pixel_features_all_data_path)
 
 # 2. 背景も含むデータでモデル学習
@@ -651,18 +1600,18 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 import json
 
-# --- ユーザー設定 ---
-main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
-reference_file_stem = "MPs_20250905_2_Ex-1_Em-1_ET300_step1"   # 元画像（JSON・tiff）の基準
-visualize_file_stem = "MPs_20250905_2_Ex260_Em280_ET10000_step1"  # 可視化対象画像
-top_features = [
-    'Ex360_Em380', 'Ex320_Em360', 'Ex380_Em420', 'Ex260_Em360', 'Ex300_Em380',
-    'Ex360_Em460', 'Ex300_Em360', 'Ex280_Em380', 'Ex340_Em380', 'Ex340_Em400'
-]
+# # --- ユーザー設定 ---
+# main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
+# reference_file_stem = "MPs_20250905_2_Ex-1_Em-1_ET300_step1"   # 元画像（JSON・tiff）の基準
+# visualize_file_stem = "MPs_20250905_2_Ex260_Em280_ET10000_step1"  # 可視化対象画像
+# top_features = [
+#     'Ex360_Em380', 'Ex320_Em360', 'Ex380_Em420', 'Ex260_Em360', 'Ex300_Em380',
+#     'Ex360_Em460', 'Ex300_Em360', 'Ex280_Em380', 'Ex340_Em380', 'Ex340_Em400'
+# ]
 # --------------------
 
 # 1. データ読み込み
-pixel_features_all_data_path = main_dir / "pixel_features_all_data.csv"
+pixel_features_all_data_path = main_dir / "csv" / "pixel_features_no_background.csv"
 df_pixels = pd.read_csv(pixel_features_all_data_path)
 
 # 2. 学習用データ（背景は除外）
@@ -732,335 +1681,5 @@ plt.show()
 
 # %% [markdown]
 # ---
-
-# %% [markdown]
-# ## t-SNE
-
-# %%
-import pandas as pd
-import numpy as np
-import json
-from PIL import Image
-from pathlib import Path
-import re
-from skimage import measure # 連結成分ラベリングに使用
-import labelme
-
-# --- ユーザーが設定する項目 ---
-main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
-reference_file_stem = "MPs_20250905_2_Ex-1_Em-1_ET300_step1"
-# ------------------------------
-
-
-# %%
-# === ステップ1: ラベル定義とユニークIDマスクの作成 ===
-print("ステップ1: JSONファイルを読み込み、ユニークIDマスクを作成します...")
-json_path = main_dir / (reference_file_stem + ".json")
-try:
-    with open(json_path, 'r') as f:
-        data = json.load(f)
-except FileNotFoundError:
-    print(f"Error: JSONファイル '{json_path}' が見つかりません。")
-    exit()
-
-# ラベル名と値の対応を定義
-labels = sorted(list(set(shape['label'] for shape in data['shapes'])))
-label_name_to_value = {label: i for i, label in enumerate(labels, start=1)}
-label_name_to_value['_background_'] = 0
-
-# クラス単位のラベルマスクを作成
-image_size = (data['imageHeight'], data['imageWidth'])
-class_label_mask, _ = labelme.utils.shapes_to_label(image_size, data['shapes'], label_name_to_value)
-
-# 連結成分ラベリングで各プラスチック片にユニークID（インスタンスID）を割り振る
-instance_mask = np.zeros_like(class_label_mask, dtype=int)
-instance_id_counter = 1
-instance_info = [] # 各IDの情報を保存するリスト
-
-for label_name, label_value in label_name_to_value.items():
-    if label_name == '_background_':
-        continue
-    
-    binary_mask = (class_label_mask == label_value)
-    labeled_components, num_components = measure.label(binary_mask, connectivity=2, background=0, return_num=True)
-
-    for i in range(1, num_components + 1):
-        instance_mask[labeled_components == i] = instance_id_counter
-        instance_info.append({
-            'instance_id': instance_id_counter,
-            'label_name': label_name
-        })
-        instance_id_counter += 1
-
-num_instances = instance_id_counter - 1
-if num_instances > 0:
-    print(f"合計 {num_instances} 個のプラスチック片を検出しました。")
-else:
-    print("Error: プラスチック片が検出されませんでした。JSONファイルを確認してください。")
-    exit()
-    
-
-# %%
-# === ステップ2: 各分光画像を読み込み、プラスチック片ごとに画素値の平均を計算 ===
-print("\nステップ2: 分光画像を処理し、平均スペクトルを計算します...")
-wavelength_pattern = re.compile(r'Ex(\d+)_Em(\d+)')
-image_files = list(main_dir.glob("*.tiff"))
-results = {i: {'instance_id': i} for i in range(1, num_instances + 1)}
-
-for image_path in image_files:
-    # フィルタなし・1次散乱光のデータを除外（元のコードのロジックを流用）
-    if '-1_Em-1' in image_path.stem:
-        continue
-    match = wavelength_pattern.search(image_path.name)
-    if not match:
-        continue
-    ex_wavelength = int(match.group(1))
-    em_wavelength = int(match.group(2))
-    if ex_wavelength == em_wavelength:
-        continue
-
-    # 画像を読み込み
-    try:
-        img = np.asarray(Image.open(image_path))
-    except Exception as e:
-        print(f"Warning: {image_path.name} の読み込みに失敗しました。理由: {e}")
-        continue
-
-    # 各インスタンスID（プラスチック片）領域の画素値の平均を計算
-    for i in range(1, num_instances + 1):
-        mean_intensity = np.mean(img[instance_mask == i])
-        column_name = f'Ex{ex_wavelength}_Em{em_wavelength}'
-        results[i][column_name] = mean_intensity
-
-print("すべての画像の処理が完了しました。")
-
-
-# %%
-# === ステップ3: 結果をDataFrameにまとめて保存 ===
-print("\nステップ3: 結果をDataFrameにまとめて保存します...")
-# 結果をDataFrameに変換
-final_df = pd.DataFrame.from_dict(results, orient='index')
-
-# ラベル情報を結合
-instance_info_df = pd.DataFrame(instance_info)
-final_df = final_df.merge(instance_info_df, on='instance_id')
-
-# 列の順番を整理
-cols_to_move = ['instance_id', 'label_name']
-final_df = final_df[cols_to_move + [col for col in final_df.columns if col not in cols_to_move]]
-
-# 結果を保存
-output_path = main_dir / "csv" / "sample_average_spectra.csv"
-final_df.to_csv(output_path, index=False)
-
-print(f"\nプラスチック片単位のデータセットが作成されました: {output_path}")
-print("\nデータセットのプレビュー:")
-print(final_df.head())
-
-
-# %% [markdown]
-# t-SNEの実行
-
-# %%
-import pandas as pd
-from sklearn.manifold import TSNE
-import matplotlib.pyplot as plt
-import seaborn as sns
-from pathlib import Path
-
-# --- ユーザーが設定する項目 ---
-main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
-input_csv_name = "sample_average_spectra.csv"
-# ------------------------------
-
-# 1. 作成したデータセットを読み込む
-file_path = main_dir / "csv" / input_csv_name
-try:
-    df = pd.read_csv(file_path)
-except FileNotFoundError:
-    print(f"Error: データセットファイル '{file_path}' が見つかりません。")
-    exit()
-
-print("データセットの読み込みが完了しました。")
-print(f"データ形状: {df.shape[0]} サンプル × {df.shape[1]} 特徴")
-
-# 2. t-SNEで使う特徴量（スペクトルデータ）とラベルを分離する
-labels = df['label_name']
-features = df.drop(columns=['instance_id', 'label_name'])
-
-# 3. t-SNEモデルを定義し、計算を実行する
-print("\nt-SNEの計算を開始します...（データ量によっては時間がかかります）")
-tsne = TSNE(
-    n_components=2,     # 2次元に削減
-    perplexity=5,       # データセット内のサンプル数に応じて調整（サンプルが18個と少ないため小さめに設定）
-    n_iter=1000,        # 最適化の繰り返し回数
-    random_state=42     # 結果を固定するためのシード値
-)
-tsne_results = tsne.fit_transform(features)
-print("t-SNEの計算が完了しました。")
-
-# 4. 結果をプロット（可視化）する
-print("\n結果をプロットします...")
-df_tsne = pd.DataFrame(tsne_results, columns=['tsne-2d-one', 'tsne-2d-two'])
-df_tsne['label'] = labels
-
-plt.figure(figsize=(12, 8))
-sns.scatterplot(
-    x="tsne-2d-one", y="tsne-2d-two",
-    hue="label",
-    palette=sns.color_palette("hsv", len(df['label_name'].unique())), # ラベルの数だけ色を自動で用意
-    data=df_tsne,
-    legend="full",
-    alpha=1,
-    s=150
-)
-
-plt.title('t-SNE Plot of Plastic Samples')
-plt.xlabel('t-SNE Dimension 1')
-plt.ylabel('t-SNE Dimension 2')
-plt.grid(True)
-plt.show()
-
-# %%
-import pandas as pd
-from sklearn.manifold import TSNE
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # 3Dプロットのために追加
-import seaborn as sns
-from pathlib import Path
-
-# --- ユーザーが設定する項目 ---
-main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
-input_csv_name = "sample_average_spectra.csv"
-# ------------------------------
-
-# 1. 作成したデータセットを読み込む
-file_path = main_dir / "csv" / input_csv_name
-try:
-    df = pd.read_csv(file_path)
-except FileNotFoundError:
-    print(f"Error: データセットファイル '{file_path}' が見つかりません。")
-    exit()
-
-print("データセットの読み込みが完了しました。")
-print(f"データ形状: {df.shape[0]} サンプル × {df.shape[1]} 特徴")
-
-# 2. t-SNEで使う特徴量（スペクトルデータ）とラベルを分離する
-labels = df['label_name']
-features = df.drop(columns=['instance_id', 'label_name'])
-
-# 3. t-SNEモデルを定義し、計算を実行する
-print("\n3D t-SNEの計算を開始します...")
-tsne = TSNE(
-    n_components=3,     # ★★★ 3次元に削減 ★★★
-    perplexity=5,
-    n_iter=1000,
-    random_state=42
-)
-tsne_results = tsne.fit_transform(features)
-print("t-SNEの計算が完了しました。")
-
-# 4. 3Dで結果をプロット（可視化）する
-print("\n結果を3Dでプロットします...")
-df_tsne = pd.DataFrame(tsne_results, columns=['tsne-3d-one', 'tsne-3d-two', 'tsne-3d-three'])
-df_tsne['label'] = labels
-
-# ラベルごとに色をマッピング
-unique_labels = labels.unique()
-palette = sns.color_palette("hsv", len(unique_labels))
-color_map = {label: color for label, color in zip(unique_labels, palette)}
-df_tsne['color'] = df_tsne['label'].map(color_map)
-
-# 3Dプロットの準備
-fig = plt.figure(figsize=(13, 10))
-ax = fig.add_subplot(111, projection='3d')
-
-# 3D散布図を作成
-ax.scatter(
-    xs=df_tsne['tsne-3d-one'],
-    ys=df_tsne['tsne-3d-two'],
-    zs=df_tsne['tsne-3d-three'],
-    c=df_tsne['color'],
-    alpha=1
-)
-
-# 軸ラベルとタイトルを設定
-ax.set_xlabel('t-SNE Dimension 1')
-ax.set_ylabel('t-SNE Dimension 2')
-ax.set_zlabel('t-SNE Dimension 3')
-ax.set_title('3D t-SNE Plot of Plastic Samples')
-
-# 凡例を作成
-legend_elements = [plt.Line2D([0], [0], marker='o', color='w', label=label,
-                          markerfacecolor=color, markersize=8) for label, color in color_map.items()]
-ax.legend(handles=legend_elements, title="Plastics")
-
-plt.show()
-
-# %%
-import pandas as pd
-from sklearn.manifold import TSNE
-import matplotlib.pyplot as plt
-import seaborn as sns
-from pathlib import Path
-
-# --- ユーザーが設定する項目 ---
-main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data/MPs_20250905_2")
-# ★★★ 読み込むファイルをピクセル単位のCSVに変更 ★★★
-input_csv_name = "pixel_features_no_background.csv" 
-# ------------------------------
-
-# 1. ピクセル単位のデータセットを読み込む
-file_path = main_dir / input_csv_name
-df = pd.read_csv(file_path)
-
-print("データセットの読み込みが完了しました。")
-print(f"データ形状: {df.shape[0]} サンプル × {df.shape[1]} 特徴")
-
-# 2. 特徴量とラベルを分離する
-labels = df['label_name']
-# ★★★ ピクセル単位のCSVには 'instance_id' がないので削除 ★★★
-features = df.drop(columns=['label_value', 'label_name']) 
-
-# 3. t-SNEモデルを定義し、計算を実行する
-print("\nt-SNEの計算を開始します...（データ量が多いため非常に時間がかかります）")
-tsne = TSNE(
-    n_components=2,
-    # ★★★ データ点数が増えたため、Perplexityを調整 ★★★
-    perplexity=30, 
-    n_iter=1000,
-    random_state=42
-)
-tsne_results = tsne.fit_transform(features)
-
-print("t-SNEの計算が完了しました。")
-
-# 4. 結果をプロット（可視化）する
-print("\n結果をプロットします...")
-df_tsne = pd.DataFrame(tsne_results, columns=['tsne-2d-one', 'tsne-2d-two'])
-df_tsne['label'] = labels
-
-plt.figure(figsize=(12, 8))
-sns.scatterplot(
-    x="tsne-2d-one", y="tsne-2d-two",
-    hue="label",
-    palette=sns.color_palette("hsv", len(df['label_name'].unique())), # ラベルの数だけ色を自動で用意
-    data=df_tsne,
-    legend="full",
-    alpha=1,
-    s=150
-)
-
-plt.title('t-SNE Plot of Plastic Samples')
-plt.xlabel('t-SNE Dimension 1')
-plt.ylabel('t-SNE Dimension 2')
-plt.grid(True)
-plt.show()
-
-# %% [markdown]
-# 
-
-# %% [markdown]
-# 
 
 
