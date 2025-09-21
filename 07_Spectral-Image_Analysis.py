@@ -214,8 +214,8 @@ from matplotlib.colors import ListedColormap
 
 
 # --- ユーザーが設定する項目 ---
-# folder_name = "MPs_20250911"
-folder_name = "MPs_20250905_2"
+folder_name = "MPs_20250911"
+# folder_name = "MPs_20250905_2"
 
 # プロジェクトのメインディレクトリとファイル名を指定
 file_stem =f"{folder_name}_Ex-1_Em-1_ET300_step1"
@@ -305,8 +305,8 @@ import re
 
 # --- ユーザーが設定する項目 ---
 # main_dir や reference_file_stem はご自身の環境に合わせて設定してください
-# folder_name = "MPs_20250911"
-folder_name = "MPs_20250905_2"
+folder_name = "MPs_20250911"
+# folder_name = "MPs_20250905_2"
 main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
 reference_file_stem = f"{folder_name}_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名
 # ------------------------------
@@ -352,22 +352,34 @@ for image_path in image_files:
         print(f"警告: {image_path.name} の処理に失敗しました。理由: {e}")
         continue
 
+# (スクリプト前半は変更なし)
+# ...
+
 # 3. ★★★ ラベル情報の処理方法を修正 ★★★
 print("\nスペクトルデータの抽出が完了しました。ラベル情報を結合・整形します...")
 
-# 3-1. JSON内のラベルにのみ数値を割り当て（未ラベル領域はデフォルトで0になる）
+# 3-0. ★★★ 元の位置情報をインデックスとして保存 ★★★
+pixel_features_df.reset_index(inplace=True)
+pixel_features_df.rename(columns={'index': 'original_index'}, inplace=True)
+
+# 3-1. JSON内のラベルにのみ数値を割り当て
 labels_in_json = sorted(list(set(shape['label'] for shape in data['shapes'])))
 label_name_to_value = {label: i for i, label in enumerate(labels_in_json, start=1)}
-
-# 3-2. ラベルマスクを生成
+# (以下、pixel_label_maskの作成までは変更なし)
+# ...
 pixel_label_mask, _ = labelme.utils.shapes_to_label(image_size, data['shapes'], label_name_to_value)
 pixel_labels_flat = pixel_label_mask.flatten()
 
-# 3-3. 数値とラベル名を対応付け（0は「未ラベル」とする）
+# 3-2. ラベル名を対応付け
 value_to_label_name = {v: k for k, v in label_name_to_value.items()}
-value_to_label_name[0] = '_unlabeled_' # ラベル付けされていない領域を明示的に命名
-
+value_to_label_name[0] = '_unlabeled_'
 pixel_features_df['label_name'] = pd.Series(pixel_labels_flat).map(value_to_label_name)
+
+# 3-3. 不要なラベルを持つピクセルを除外
+labels_to_exclude = ['other', '_unlabeled_']
+pixel_features_df = pixel_features_df[~pixel_features_df['label_name'].isin(labels_to_exclude)].copy()
+
+# (以降の処理は変更なし)
 
 # 3-4. 不要なラベルを持つピクセルを除外
 initial_rows = len(pixel_features_df)
@@ -614,6 +626,9 @@ plt.show()
 # ----
 # # 2つのデータセットを用いた交差検証
 
+# %% [markdown]
+# ## モデルの学習
+
 # %%
 import pandas as pd
 from pathlib import Path
@@ -651,43 +666,46 @@ except FileNotFoundError:
 import pandas as pd
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report
 import joblib
-# import time
 
+# original_indexを除外する、正しいprepare_data関数
 def prepare_data(df):
-    """背景データを含め、特徴量とラベルに分割するヘルパー関数"""
+    """データフレームから特徴量とラベルを分割するヘルパー関数"""
     if df.empty:
         raise ValueError("データセットにピクセルデータがありません。")
-    X = df.drop(columns=['label_value', 'label_name'])
+    
+    # 除外する列のリストを作成
+    columns_to_drop = ['label_name']
+    if 'original_index' in df.columns:
+        columns_to_drop.append('original_index')
+    if 'label_value' in df.columns:
+        columns_to_drop.append('label_value')
+    
+    X = df.drop(columns=columns_to_drop)
     y = df['label_name']
     return X, y
 
 def train_and_save(X_train, y_train, model_save_path):
-    print("\n--- ランダムフォレストモデルの学習を開始 ---")
-    
-    # モデルの学習
-    # 修正点: class_weight='balanced' を追加
-    model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced')
+    print(f"\n--- モデルの学習を開始: {model_save_path.name} ---")
+    model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', n_jobs=-1)
     model.fit(X_train, y_train)
-    
-    # モデルの保存
     joblib.dump(model, model_save_path)
+    print("学習済みモデルを保存しました。")
 
-    print(f"学習済みモデルを保存しました: {model_save_path}")
-    
-    return model
-
-# データセットの読み込み (前のセクションで定義されたパスを使用)
+# --- ユーザー設定 ---
 main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
 dataset1_folder_name = "MPs_20250911"
 dataset2_folder_name = "MPs_20250905_2"
-dataset1_csv_path = main_dir / dataset1_folder_name / "csv" / "pixel_features_with_background.csv"
-dataset2_csv_path = main_dir / dataset2_folder_name / "csv" / "pixel_features_with_background.csv"
+# --------------------
 
-df1 = pd.read_csv(dataset1_csv_path)
-df2 = pd.read_csv(dataset2_csv_path)
+try:
+    df1 = pd.read_csv(main_dir / dataset1_folder_name / "csv" / "pixel_features_with_background.csv")
+    df2 = pd.read_csv(main_dir / dataset2_folder_name / "csv" / "pixel_features_with_background.csv")
+except FileNotFoundError as e:
+    print(f"エラー: CSVファイルが見つかりません。パスを確認してください。: {e.filename}")
+    exit()
 
+# データの前処理
 X1, y1 = prepare_data(df1)
 X2, y2 = prepare_data(df2)
 
@@ -695,10 +713,16 @@ X2, y2 = prepare_data(df2)
 train_and_save(X1, y1, main_dir / "model_trained_on_dataset1.joblib")
 print(f"データセット1（{dataset1_folder_name}）学習完了")
 
-
 # モデル2を学習・保存
 train_and_save(X2, y2, main_dir / "model_trained_on_dataset2.joblib")
 print(f"データセット2（{dataset2_folder_name}）学習完了")
+
+
+# %% [markdown]
+# ## 分類モデルの交差検証
+
+# %% [markdown]
+# ### テスト対象：背景とプラスチックラベル域のピクセル
 
 # %%
 import pandas as pd
@@ -707,13 +731,25 @@ from sklearn.metrics import classification_report
 import joblib
 import time
 
+# ★★★ ここを修正 ★★★
 def prepare_data(df):
-    """背景データを含め、特徴量とラベルに分割するヘルパー関数"""
+    """データフレームから特徴量とラベルを分割するヘルパー関数"""
     if df.empty:
         raise ValueError("データセットにピクセルデータがありません。")
-    X = df.drop(columns=['label_value', 'label_name'])
+    
+    # 除外する列のリストを作成
+    columns_to_drop = ['label_name']
+    # 'original_index' も特徴量ではないため、存在すれば除外
+    if 'original_index' in df.columns:
+        columns_to_drop.append('original_index')
+    # 'label_value' はもう存在しないが、念のためチェック
+    if 'label_value' in df.columns:
+        columns_to_drop.append('label_value')
+    
+    X = df.drop(columns=columns_to_drop)
     y = df['label_name']
     return X, y
+# ★★★ ここまで ★★★
 
 def evaluate_model(model_path, X_test, y_test, model_name):
     print(f"\n--- {model_name}の評価を開始 ---")
@@ -731,7 +767,6 @@ def evaluate_model(model_path, X_test, y_test, model_name):
     print(classification_report(y_test, y_pred))
     print(f"評価が完了しました。実行時間: {elapsed_time:.2f}秒")
     
-    # 特徴量重要度を計算
     feature_importances = model.feature_importances_
     feature_names = X_test.columns
     importance_df = pd.DataFrame({
@@ -739,38 +774,38 @@ def evaluate_model(model_path, X_test, y_test, model_name):
         'importance': feature_importances
     }).sort_values('importance', ascending=False)
     
-    return importance_df, model # 修正点: importance_df と model を返すように変更
+    return importance_df, model
 
-# データセットの読み込み
+# --- ユーザー設定 ---
 main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
 dataset1_folder_name = "MPs_20250911"
 dataset2_folder_name = "MPs_20250905_2"
-dataset1_csv_path = main_dir / dataset1_folder_name / "csv" / "pixel_features_with_background.csv"
-dataset2_csv_path = main_dir / dataset2_folder_name / "csv" / "pixel_features_with_background.csv"
+# --------------------
 
-df1 = pd.read_csv(dataset1_csv_path)
-df2 = pd.read_csv(dataset2_csv_path)
+try:
+    dataset1_csv_path = main_dir / dataset1_folder_name / "csv" / "pixel_features_with_background.csv"
+    dataset2_csv_path = main_dir / dataset2_folder_name / "csv" / "pixel_features_with_background.csv"
+    
+    df1 = pd.read_csv(dataset1_csv_path)
+    df2 = pd.read_csv(dataset2_csv_path)
+except FileNotFoundError as e:
+    print(f"エラー: CSVファイルが見つかりません。パスを確認してください。: {e.filename}")
+    exit()
 
+# データの前処理
 X1, y1 = prepare_data(df1)
 X2, y2 = prepare_data(df2)
 
 # 交差検証1: モデル1を評価
-# evaluate_model関数の返り値を model1 に格納
 importance1, model1 = evaluate_model(main_dir / "model_trained_on_dataset1.joblib", X2, y2, "モデル1 (Dataset1で学習)")
 
 # 交差検証2: モデル2を評価
-# evaluate_model関数の返り値を model2 に格納
 importance2, model2 = evaluate_model(main_dir / "model_trained_on_dataset2.joblib", X1, y1, "モデル2 (Dataset2で学習)")
 
-
 # --- 結果を保存するコードブロック ---
-# この部分で model1 と model2 変数が使用可能になっている
 data1_output_dir = main_dir / dataset1_folder_name
 data2_output_dir = main_dir / dataset2_folder_name
 
-# output_dir.mkdir(parents=True, exist_ok=True)
-
-# 精度レポートをテキストファイルとして保存
 # 交差検証1の結果
 with open(data1_output_dir / "classification_report_model1.txt", "w") as f:
     f.write(classification_report(y2, model1.predict(X2)))
@@ -780,32 +815,12 @@ with open(data2_output_dir / "classification_report_model2.txt", "w") as f:
     f.write(classification_report(y1, model2.predict(X1)))
 
 # 特徴量重要度をCSVファイルとして保存
-importance1.to_csv(data1_output_dir / "csv" / "importance_from_dataset.csv", index=False)
-importance2.to_csv(data2_output_dir / "csv" / "importance_from_dataset.csv", index=False)
+importance1.to_csv(data1_output_dir / "csv" / "importance_from_dataset1.csv", index=False)
+importance2.to_csv(data2_output_dir / "csv" / "importance_from_dataset2.csv", index=False)
 
 print("\n--- 全ての処理が完了しました ---")
-print(f"精度レポートと重要度ランキングは保存されました")
+print(f"精度レポートと重要度ランキングは各データセットフォルダに保存されました。")
 
-# %%
-# # --- 結果を保存するコードブロック ---
-# output_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/results")
-# output_dir.mkdir(parents=True, exist_ok=True)
-
-# # 精度レポートをテキストファイルとして保存
-# # 交差検証1の結果
-# with open(output_dir / "classification_report_model1.txt", "w") as f:
-#     f.write(classification_report(y2, model1.predict(X2)))
-
-# # 交差検証2の結果
-# with open(output_dir / "classification_report_model2.txt", "w") as f:
-#     f.write(classification_report(y1, model2.predict(X1)))
-
-# # 特徴量重要度をCSVファイルとして保存
-# importance1.to_csv(output_dir / "importance_from_dataset1.csv", index=False)
-# importance2.to_csv(output_dir / "importance_from_dataset2.csv", index=False)
-
-# print("\n--- 全ての処理が完了しました ---")
-# print(f"精度レポートと重要度ランキングは以下のディレクトリに保存されました: {output_dir}")
 
 # %% [markdown]
 # ## 分類結果の可視化
@@ -818,108 +833,101 @@ from PIL import Image
 import joblib
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import json
 import labelme
+import json
 
-# --- ユーザーが設定する項目 ---
+# --- ユーザー設定 ---
 main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
-# 評価に使用するデータセットのフォルダ名（テストデータとしてMPs_20250905_2を使用）
+# 評価に使用するデータセット（正解ラベルを表示する側）
 test_dataset_folder_name = "MPs_20250905_2" 
-# 学習済みモデルのパス（Dataset1で学習し、resultsフォルダに保存したもの）
+# 使用する学習済みモデル
 model_path = main_dir / "model_trained_on_dataset1.joblib"
-# ------------------------------
+# --------------------
 
-# 1. データの準備とモデルの読み込み
+# 1. データの準備
 print("--- データの準備 ---")
 
-# ラベル名と色を対応付けるための辞書を定義
+# ★★★ 色とラベルの対応をここで一元管理 ★★★
 label_to_color_map = {
     "ABS": "red", "HDPE": "blue", "LDPE": "green", "PC": "yellow", "PET": "purple",
-    "PMMA": "orange", "PP": "cyan", "PS": "magenta", "PVC": "lime", "_background_": "gray"
+    "PMMA": "orange", "PP": "cyan", "PS": "magenta", "PVC": "lime", "background": "gray",
+    "background_ref": "gray" # 念のため_refも同じ色に
 }
 
-# モデルを読み込み、学習に使用された全波長を取得
-model = joblib.load(model_path)
-feature_names = model.feature_names_in_
-
-# 評価対象の全波長データセットを読み込む
-test_data_path = main_dir / test_dataset_folder_name / "csv" / "pixel_features_with_background.csv"
-try:
-    df_test = pd.read_csv(test_data_path, index_col=0) # 修正点：index_col=0 を追加
-except FileNotFoundError:
-    print(f"エラー: {test_data_path} が見つかりません。パスを確認してください。")
-    exit()
-
-# 特徴量（X_test）を準備
-X_test = df_test[feature_names]
-
-# 元画像のパスを取得（可視化用）
-reference_image_path = main_dir / test_dataset_folder_name / f"{test_dataset_folder_name}_Ex-1_Em-1_ET300_step1.tiff"
-original_image = np.asarray(Image.open(reference_image_path))
+# 評価対象のJSONとCSVファイルのパスを定義
 json_path = main_dir / test_dataset_folder_name / f"{test_dataset_folder_name}_Ex-1_Em-1_ET300_step1.json"
+test_csv_path = main_dir / test_dataset_folder_name / "csv" / "pixel_features_with_background.csv"
 
-# 2. モデルによるピクセルごとの分類
-print("\n--- ピクセルごとのラベルを予測 ---")
-y_pred = model.predict(X_test)
-print("予測が完了しました。")
-
-# 3. JSONファイルから完全なマスクを生成し、可視化
-print("\n--- 予測結果の可視化 ---")
-
-# 元画像の形状（高さと幅）を取得
-img_height, img_width = original_image.shape
-
-# 予測結果を画像全体にマッピング
-y_pred_full = np.array([''] * (img_height * img_width), dtype=object) # 空の文字列で初期化
-y_pred_full[df_test.index] = y_pred
-
-# JSONからotherラベルを特定
+# 2. 正解ラベルマスクの作成 (左側の画像)
+print("正解ラベルマスクを作成しています...")
 with open(json_path, 'r') as f:
     json_data = json.load(f)
 
-label_name_to_value = {"_background_": 0}
-for shape in json_data["shapes"]:
-    label_name = shape["label"]
-    if label_name not in label_name_to_value:
-        label_name_to_value[label_name] = len(label_name_to_value)
+img_height = json_data['imageHeight']
+img_width = json_data['imageWidth']
 
-full_mask, _ = labelme.utils.shapes_to_label(
-    original_image.shape, json_data["shapes"], label_name_to_value
-)
+# labelme形式で数値マスクを生成
+labels_in_json = sorted(list(set(shape['label'] for shape in json_data['shapes'])))
+label_name_to_value = {label: i for i, label in enumerate(labels_in_json, start=1)}
+numeric_ground_truth_mask, _ = labelme.utils.shapes_to_label((img_height, img_width), json_data['shapes'], label_name_to_value)
 
-# カラーマスクの生成
-predicted_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+# 数値マスクをカラーマスクに変換
+ground_truth_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+for label_name, label_value in label_name_to_value.items():
+    # 'background_ref' を 'background' として扱う
+    display_label = 'background' if label_name == 'background_ref' else label_name
+    
+    if display_label in label_to_color_map:
+        color_rgb = (np.array(plt.cm.colors.to_rgb(label_to_color_map[display_label])) * 255).astype(np.uint8)
+        ground_truth_mask[numeric_ground_truth_mask == label_value] = color_rgb
 
+# 3. 予測結果マスクの作成 (右側の画像)
+print("モデルによる予測とマスク作成を実行しています...")
+model = joblib.load(model_path)
+feature_names_from_model = model.feature_names_in_
+
+df_test = pd.read_csv(test_csv_path)
+
+original_indices = df_test['original_index'].values
+X_test = df_test[feature_names_from_model]
+y_pred = model.predict(X_test)
+
+predicted_mask_flat = np.zeros((img_height * img_width, 3), dtype=np.uint8)
 for label_name, color_name in label_to_color_map.items():
-    indices = np.where(y_pred_full == label_name)[0]
-    color_rgb = (np.array(plt.cm.colors.to_rgb(color_name)) * 255).astype(np.uint8)
-    predicted_mask.reshape(-1, 3)[indices] = color_rgb
+    pred_indices_in_y = np.where(y_pred == label_name)[0]
+    if len(pred_indices_in_y) > 0:
+        img_indices_to_paint = original_indices[pred_indices_in_y]
+        color_rgb = (np.array(plt.cm.colors.to_rgb(color_name)) * 255).astype(np.uint8)
+        predicted_mask_flat[img_indices_to_paint] = color_rgb
 
-# otherラベルの領域を黒く塗りつぶす
-other_indices = np.where(full_mask == label_name_to_value.get('other', -1))[0]
-predicted_mask.reshape(-1, 3)[other_indices] = [0, 0, 0]
+predicted_mask = predicted_mask_flat.reshape(img_height, img_width, 3)
 
-# 図の作成と表示
-fig, axes = plt.subplots(1, 2, figsize=(15, 7))
+# 4. 2つの画像を並べてプロット
+print("\n--- 結果の比較表示 ---")
+fig, axes = plt.subplots(1, 2, figsize=(18, 9))
 
-axes[0].imshow(original_image, cmap='gray')
-axes[0].set_title('Original Image')
+# 左: 正解ラベル
+axes[0].imshow(ground_truth_mask)
+axes[0].set_title('Ground Truth (Annotation)', fontsize=16)
 axes[0].axis('off')
 
+# 右: モデルの予測結果
 axes[1].imshow(predicted_mask)
-axes[1].set_title('Predicted Labels (from Dataset1 model)')
+axes[1].set_title('Model Prediction', fontsize=16)
 axes[1].axis('off')
 
-# 凡例の作成
+# 共通の凡例を作成
 legend_patches = []
-for label_name, color in label_to_color_map.items():
-    legend_patches.append(mpatches.Patch(color=color, label=label_name))
-plt.legend(handles=legend_patches, bbox_to_anchor=(1.05, 1), loc='upper left')
+# backgroundを除いた凡例を作成
+plot_labels = {k: v for k, v in label_to_color_map.items() if k not in ['background_ref']}
 
-plt.tight_layout()
+for label_name, color in sorted(plot_labels.items()):
+    legend_patches.append(mpatches.Patch(color=color, label=label_name))
+fig.legend(handles=legend_patches, bbox_to_anchor=(1.0, 0.9), loc='upper left', fontsize=12)
+
+plt.tight_layout(rect=[0, 0, 0.85, 1])
 plt.show()
 
-print("\n可視化が完了しました。")
 
 # %%
 import pandas as pd
@@ -929,90 +937,104 @@ from PIL import Image
 import joblib
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import re
+import labelme
+import json
 
-# --- ユーザーが設定する項目 ---
+# --- ユーザー設定 ---
 main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
-# 評価に使用するデータセットのフォルダ名（テストデータとしてMPs_20250911を使用）
+# 評価に使用するデータセット（正解ラベルを表示する側）
 test_dataset_folder_name = "MPs_20250911" 
-# 学習済みモデルのパス（Dataset2で学習し、resultsフォルダに保存したもの）
+# 使用する学習済みモデル
 model_path = main_dir / "model_trained_on_dataset2.joblib"
-# ------------------------------
+# --------------------
 
-# 1. データの準備とモデルの読み込み
+# 1. データの準備
 print("--- データの準備 ---")
 
-# ラベル名と色を対応付けるための辞書を定義
+# ★★★ 色とラベルの対応をここで一元管理 ★★★
 label_to_color_map = {
     "ABS": "red", "HDPE": "blue", "LDPE": "green", "PC": "yellow", "PET": "purple",
-    "PMMA": "orange", "PP": "cyan", "PS": "magenta", "PVC": "lime", "_background_": "gray"
+    "PMMA": "orange", "PP": "cyan", "PS": "magenta", "PVC": "lime", "background": "gray",
+    "background_ref": "gray" # 念のため_refも同じ色に
 }
-labels = list(label_to_color_map.keys())
 
-# モデルを読み込み、学習に使用された全波長を取得
-model = joblib.load(model_path)
-feature_names = model.feature_names_in_
+# 評価対象のJSONとCSVファイルのパスを定義
+json_path = main_dir / test_dataset_folder_name / f"{test_dataset_folder_name}_Ex-1_Em-1_ET300_step1.json"
+test_csv_path = main_dir / test_dataset_folder_name / "csv" / "pixel_features_with_background.csv"
 
-# 評価対象の全波長データセットを読み込む
-test_data_path = main_dir / test_dataset_folder_name / "csv" / "pixel_features_with_background.csv"
-try:
-    df_test = pd.read_csv(test_data_path)
-except FileNotFoundError:
-    print(f"エラー: {test_data_path} が見つかりません。パスを確認してください。")
-    exit()
+# 2. 正解ラベルマスクの作成 (左側の画像)
+print("正解ラベルマスクを作成しています...")
+with open(json_path, 'r') as f:
+    json_data = json.load(f)
 
-# 特徴量（X_test）を準備
-X_test = df_test[feature_names]
+img_height = json_data['imageHeight']
+img_width = json_data['imageWidth']
 
-# 元画像のパスを取得（可視化用）
-reference_image_path = main_dir / test_dataset_folder_name / f"{test_dataset_folder_name}_Ex-1_Em-1_ET300_step1.tiff"
-original_image = np.asarray(Image.open(reference_image_path))
+# labelme形式で数値マスクを生成
+labels_in_json = sorted(list(set(shape['label'] for shape in json_data['shapes'])))
+label_name_to_value = {label: i for i, label in enumerate(labels_in_json, start=1)}
+numeric_ground_truth_mask, _ = labelme.utils.shapes_to_label((img_height, img_width), json_data['shapes'], label_name_to_value)
 
-# 2. モデルによるピクセルごとの分類
-print("\n--- ピクセルごとのラベルを予測 ---")
-y_pred = model.predict(X_test)
-print("予測が完了しました。")
-
-# 3. 予測結果をカラーマスクとして可視化
-print("\n--- 予測結果の可視化 ---")
-
-# 元画像の形状（高さと幅）を取得
-img_height, img_width = original_image.shape
-
-# 予測結果からカラーマスクを生成
-predicted_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
-
-# ラベル名と色をマッピングし、マスクに適用
-for label_name, color_name in label_to_color_map.items():
-    indices = np.where(y_pred == label_name)[0]
-    color_rgb = (np.array(plt.cm.colors.to_rgb(color_name)) * 255).astype(np.uint8)
+# 数値マスクをカラーマスクに変換
+ground_truth_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+for label_name, label_value in label_name_to_value.items():
+    # 'background_ref' を 'background' として扱う
+    display_label = 'background' if label_name == 'background_ref' else label_name
     
-    # 予測マスクの作成
-    predicted_mask.reshape(-1, 3)[indices] = color_rgb
+    if display_label in label_to_color_map:
+        color_rgb = (np.array(plt.cm.colors.to_rgb(label_to_color_map[display_label])) * 255).astype(np.uint8)
+        ground_truth_mask[numeric_ground_truth_mask == label_value] = color_rgb
 
-# 図の作成と表示
-fig, axes = plt.subplots(1, 2, figsize=(15, 7))
+# 3. 予測結果マスクの作成 (右側の画像)
+print("モデルによる予測とマスク作成を実行しています...")
+model = joblib.load(model_path)
+feature_names_from_model = model.feature_names_in_
 
-# 1. 元画像の表示
-axes[0].imshow(original_image, cmap='gray')
-axes[0].set_title('Original Image')
+df_test = pd.read_csv(test_csv_path)
+
+original_indices = df_test['original_index'].values
+X_test = df_test[feature_names_from_model]
+y_pred = model.predict(X_test)
+
+predicted_mask_flat = np.zeros((img_height * img_width, 3), dtype=np.uint8)
+for label_name, color_name in label_to_color_map.items():
+    pred_indices_in_y = np.where(y_pred == label_name)[0]
+    if len(pred_indices_in_y) > 0:
+        img_indices_to_paint = original_indices[pred_indices_in_y]
+        color_rgb = (np.array(plt.cm.colors.to_rgb(color_name)) * 255).astype(np.uint8)
+        predicted_mask_flat[img_indices_to_paint] = color_rgb
+
+predicted_mask = predicted_mask_flat.reshape(img_height, img_width, 3)
+
+# 4. 2つの画像を並べてプロット
+print("\n--- 結果の比較表示 ---")
+fig, axes = plt.subplots(1, 2, figsize=(18, 9))
+
+# 左: 正解ラベル
+axes[0].imshow(ground_truth_mask)
+axes[0].set_title('Ground Truth (Annotation)', fontsize=16)
 axes[0].axis('off')
 
-# 2. 予測結果の可視化
+# 右: モデルの予測結果
 axes[1].imshow(predicted_mask)
-axes[1].set_title('Predicted Labels (from Dataset2 model)')
+axes[1].set_title('Model Prediction', fontsize=16)
 axes[1].axis('off')
 
-# 凡例の作成
+# 共通の凡例を作成
 legend_patches = []
-for label_name, color in label_to_color_map.items():
-    legend_patches.append(mpatches.Patch(color=color, label=label_name))
-plt.legend(handles=legend_patches, bbox_to_anchor=(1.05, 1), loc='upper left')
+# backgroundを除いた凡例を作成
+plot_labels = {k: v for k, v in label_to_color_map.items() if k not in ['background_ref']}
 
-plt.tight_layout()
+for label_name, color in sorted(plot_labels.items()):
+    legend_patches.append(mpatches.Patch(color=color, label=label_name))
+fig.legend(handles=legend_patches, bbox_to_anchor=(1.0, 0.9), loc='upper left', fontsize=12)
+
+plt.tight_layout(rect=[0, 0, 0.85, 1])
 plt.show()
 
-print("\n可視化が完了しました。")
+
+# %% [markdown]
+# ### テスト対象：全てのピクセル
 
 # %% [markdown]
 # ---
