@@ -194,9 +194,6 @@ else:
     print("\n画像間にずれがある可能性があります。再撮影または画像補正を検討してください。")
 
 # %% [markdown]
-# ---
-
-# %% [markdown]
 # # ピクセル単位での分類モデル
 
 # %% [markdown]
@@ -289,10 +286,12 @@ plt.show()
 print("\n可視化されたラベリング結果を確認しました。")
 
 # %% [markdown]
-# ## データセットの生成
+# ---
+# # 2つのデータセットを用いた交差検証
+# ## 学習・テスト対象：背景とプラスチックラベル域のピクセル
 
 # %% [markdown]
-# ### background情報あり
+# ### データセットの生成
 
 # %%
 import pandas as pd
@@ -411,7 +410,7 @@ print(pixel_features_df['label_name'].unique())
 # ----
 
 # %% [markdown]
-# # t-SNE データセットの可視化
+# ### t-SNE データセットの可視化
 
 # %%
 import pandas as pd
@@ -624,10 +623,10 @@ plt.show()
 
 # %% [markdown]
 # ----
-# # 2つのデータセットを用いた交差検証
+# 
 
 # %% [markdown]
-# ## モデルの学習
+# ### データセットの学習
 
 # %%
 import pandas as pd
@@ -719,10 +718,7 @@ print(f"データセット2（{dataset2_folder_name}）学習完了")
 
 
 # %% [markdown]
-# ## 分類モデルの交差検証
-
-# %% [markdown]
-# ### テスト対象：背景とプラスチックラベル域のピクセル
+# ### 分類モデルの交差検証
 
 # %%
 import pandas as pd
@@ -823,7 +819,7 @@ print(f"精度レポートと重要度ランキングは各データセットフ
 
 
 # %% [markdown]
-# ## 分類結果の可視化
+# ### 分類結果の可視化
 
 # %%
 import pandas as pd
@@ -1034,7 +1030,726 @@ plt.show()
 
 
 # %% [markdown]
-# ### テスト対象：全てのピクセル
+# ---
+
+# %% [markdown]
+# ## 学習・テスト対象：プラスチックのピクセル域のみ
+
+# %% [markdown]
+# ### データセットの作成
+
+# %%
+import pandas as pd
+import numpy as np
+import labelme
+import json
+from PIL import Image
+from pathlib import Path
+import re
+
+# --- ユーザーが設定する項目 ---
+# main_dir や reference_file_stem はご自身の環境に合わせて設定してください
+# folder_name = "MPs_20250911"
+folder_name = "MPs_20250905_2"
+main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
+reference_file_stem = f"{folder_name}_Ex-1_Em-1_ET300_step1" # ラベリングに使用した画像ファイル名
+# ------------------------------
+
+# 1. 基準となるJSONファイルを読み込む
+json_path = main_dir / (reference_file_stem + ".json")
+try:
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+except FileNotFoundError:
+    print(f"エラー: JSONファイルが見つかりません。パスを確認してください: {json_path}")
+    exit()
+
+# 2. すべての分光画像の画素値をピクセル単位で抽出
+wavelength_pattern = re.compile(r'Ex(\d+)_Em(\d+)')
+image_files = list(main_dir.glob("*.tiff"))
+if not image_files:
+    print("エラー: TIFF画像ファイルが見つかりません。")
+    exit()
+
+pixel_features_df = pd.DataFrame()
+image_size = (data['imageHeight'], data['imageWidth'])
+print(f"画像サイズを検出しました: {image_size}")
+
+for image_path in image_files:
+    if '-1_Em-1' in image_path.stem:
+        continue
+    match = wavelength_pattern.search(image_path.name)
+    if not match:
+        continue
+    ex_wavelength = int(match.group(1))
+    em_wavelength = int(match.group(2))
+    if ex_wavelength == em_wavelength:
+        continue
+
+    try:
+        img = np.asarray(Image.open(image_path))
+        if img.shape[:2] != image_size:
+            print(f"警告: {image_path.name} のサイズが異なります。スキップします。")
+            continue
+        pixel_features_df[f'Ex{ex_wavelength}_Em{em_wavelength}'] = img.flatten()
+    except Exception as e:
+        print(f"警告: {image_path.name} の処理に失敗しました。理由: {e}")
+        continue
+
+# 3. ラベル情報の結合と整形
+print("\nスペクトルデータの抽出が完了しました。ラベル情報を結合・整形します...")
+pixel_features_df.reset_index(inplace=True)
+pixel_features_df.rename(columns={'index': 'original_index'}, inplace=True)
+
+labels_in_json = sorted(list(set(shape['label'] for shape in data['shapes'])))
+label_name_to_value = {label: i for i, label in enumerate(labels_in_json, start=1)}
+
+pixel_label_mask, _ = labelme.utils.shapes_to_label(image_size, data['shapes'], label_name_to_value)
+pixel_labels_flat = pixel_label_mask.flatten()
+
+value_to_label_name = {v: k for k, v in label_name_to_value.items()}
+value_to_label_name[0] = '_unlabeled_'
+pixel_features_df['label_name'] = pd.Series(pixel_labels_flat).map(value_to_label_name)
+
+# ★★★ ここからが変更点 ★★★
+# 3-1. 'background_ref' を 'background' に名称変更 (除外処理の前に行う)
+if 'background_ref' in pixel_features_df['label_name'].unique():
+    pixel_features_df['label_name'] = pixel_features_df['label_name'].replace({'background_ref': 'background'})
+    print("'background_ref' を 'background' に名称変更しました。")
+
+# 3-2. 不要なラベルを持つピクセルを除外 (backgroundも除外対象に追加)
+initial_rows = len(pixel_features_df)
+labels_to_exclude = ['other', '_unlabeled_', 'background']
+pixel_features_df = pixel_features_df[~pixel_features_df['label_name'].isin(labels_to_exclude)].copy()
+
+final_rows = len(pixel_features_df)
+print(f"除外対象 {labels_to_exclude} を持つピクセルを削除しました。")
+print(f"処理後の総ピクセル数: {final_rows} (削除されたピクセル数: {initial_rows - final_rows})")
+# ★★★ ここまでが変更点 ★★★
+
+# 4. データセットをCSVとして保存
+output_dir = main_dir / "csv"
+output_dir.mkdir(parents=True, exist_ok=True)
+# ★★★ 出力ファイル名を変更 ★★★
+output_csv_path = output_dir / "pixel_features_plastics_only.csv"
+pixel_features_df.to_csv(output_csv_path, index=False)
+
+print(f'\n新しい「プラスチックのみ」のデータセットが作成されました: {output_csv_path}')
+print('\nデータセットのプレビュー:')
+print(pixel_features_df.head())
+print('\n含まれるラベル一覧:')
+print(pixel_features_df['label_name'].unique())
+
+
+# %% [markdown]
+# ### t-SNE
+
+# %%
+import pandas as pd
+from pathlib import Path
+import numpy as np
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+import seaborn as sns
+import time
+
+# --- ユーザー設定 (ここだけ編集してください) ---
+# ★ 解析したいデータフォルダ名を設定
+folder_name = "MPs_20250911"
+# ----------------------------------------------
+
+
+# 1. パスの設定とCSVファイルの読み込み
+main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
+input_csv_path = main_dir / "csv" / "pixel_features_plastics_only.csv"
+
+print(f"データファイルを読み込みます: {input_csv_path}")
+df = pd.read_csv(input_csv_path)
+label_column = 'label_name'
+if label_column not in df.columns:
+    print(f"\n--- エラー ---")
+    print(f"読み込んだCSVファイルに '{label_column}' 列が存在しません。")
+    exit()
+
+print("\nデータ読み込み成功。")
+
+# 3. 各クラスから均等にデータをサンプリング
+n_samples_per_class = 2000
+print(f"\n各クラスから最大 {n_samples_per_class} 点をサンプリングします...")
+
+sampled_dfs = []
+for label in df[label_column].unique():
+    group = df[df[label_column] == label]
+    sample = group.sample(n=min(len(group), n_samples_per_class), random_state=42)
+    sampled_dfs.append(sample)
+sampled_df = pd.concat(sampled_dfs).reset_index(drop=True)
+print(f"サンプリング後のデータセットサイズ: {len(sampled_df)} ピクセル")
+
+# 4. データの前処理
+labels = sampled_df[label_column]
+columns_to_drop = [label_column]
+if 'label_value' in sampled_df.columns:
+    columns_to_drop.append('label_value')
+features = sampled_df.drop(columns=columns_to_drop)
+scaler = StandardScaler()
+features_scaled = scaler.fit_transform(features)
+
+# 5. t-SNEの計算
+print("\nt-SNEの計算を開始します...")
+start_time = time.time()
+tsne = TSNE(n_components=2, perplexity=30, random_state=42, n_iter=1000)
+tsne_results = tsne.fit_transform(features_scaled)
+end_time = time.time()
+print(f"t-SNE計算完了。実行時間: {end_time - start_time:.2f} 秒")
+
+# 6. 結果の可視化
+print("\n結果をプロットします...")
+df_tsne = pd.DataFrame(tsne_results, columns=['tsne-2d-one', 'tsne-2d-two'])
+df_tsne['label'] = labels
+
+# 6-1. ユニークなラベル名を取得し、ソート
+unique_labels = sorted(df_tsne['label'].unique())
+
+# 6-2. カラーパレットを準備
+plastic_colors = plt.cm.get_cmap('tab10', len(unique_labels))
+
+# 6-3. ラベル名と色を対応付ける辞書を作成
+color_map = {}
+plastic_color_index = 0
+for label in unique_labels:
+    # ★★★ 変更点2: チェックする名前を'background'に変更 ★★★
+    if label == 'background':
+        color_map[label] = 'lightgray'
+    else:
+        color_map[label] = plastic_colors(plastic_color_index)
+        plastic_color_index += 1
+
+# 6-4. プロットの実行
+plt.style.use('seaborn-v0_8-whitegrid')
+plt.figure(figsize=(16, 10))
+ax = sns.scatterplot(
+    x="tsne-2d-one", y="tsne-2d-two",
+    hue="label",
+    hue_order=unique_labels,
+    palette=color_map,
+    data=df_tsne,
+    legend="full",
+    # ★★★ ここを変更 ★★★
+    alpha=1.0,  # 点を不透明に変更 (0.7 -> 1.0)
+    s=50        # 点のサイズを大きく変更 (20 -> 50)
+)
+
+plt.title(f't-SNE Plot of Spectral Data (Sampled from {folder_name})', fontsize=16)
+plt.xlabel('t-SNE Dimension 1', fontsize=12)
+plt.ylabel('t-SNE Dimension 2', fontsize=12)
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+plt.tight_layout(rect=[0, 0, 0.85, 1])
+plt.show()
+
+# %%
+import pandas as pd
+from pathlib import Path
+import numpy as np
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+import seaborn as sns
+import time
+
+# --- ユーザー設定 (ここだけ編集してください) ---
+# ★ 解析したいデータフォルダ名を設定
+folder_name = "MPs_20250905_2"
+# ----------------------------------------------
+
+
+# 1. パスの設定とCSVファイルの読み込み
+main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
+input_csv_path = main_dir / "csv" / "pixel_features_plastics_only.csv"
+
+print(f"データファイルを読み込みます: {input_csv_path}")
+df = pd.read_csv(input_csv_path)
+label_column = 'label_name'
+if label_column not in df.columns:
+    print(f"\n--- エラー ---")
+    print(f"読み込んだCSVファイルに '{label_column}' 列が存在しません。")
+    exit()
+
+print("\nデータ読み込み成功。")
+
+# 3. 各クラスから均等にデータをサンプリング
+n_samples_per_class = 2000
+print(f"\n各クラスから最大 {n_samples_per_class} 点をサンプリングします...")
+
+sampled_dfs = []
+for label in df[label_column].unique():
+    group = df[df[label_column] == label]
+    sample = group.sample(n=min(len(group), n_samples_per_class), random_state=42)
+    sampled_dfs.append(sample)
+sampled_df = pd.concat(sampled_dfs).reset_index(drop=True)
+print(f"サンプリング後のデータセットサイズ: {len(sampled_df)} ピクセル")
+
+# 4. データの前処理
+labels = sampled_df[label_column]
+columns_to_drop = [label_column]
+if 'label_value' in sampled_df.columns:
+    columns_to_drop.append('label_value')
+features = sampled_df.drop(columns=columns_to_drop)
+scaler = StandardScaler()
+features_scaled = scaler.fit_transform(features)
+
+# 5. t-SNEの計算
+print("\nt-SNEの計算を開始します...")
+start_time = time.time()
+tsne = TSNE(n_components=2, perplexity=30, random_state=42, n_iter=1000)
+tsne_results = tsne.fit_transform(features_scaled)
+end_time = time.time()
+print(f"t-SNE計算完了。実行時間: {end_time - start_time:.2f} 秒")
+
+# 6. 結果の可視化
+print("\n結果をプロットします...")
+df_tsne = pd.DataFrame(tsne_results, columns=['tsne-2d-one', 'tsne-2d-two'])
+df_tsne['label'] = labels
+
+# 6-1. ユニークなラベル名を取得し、ソート
+unique_labels = sorted(df_tsne['label'].unique())
+
+# 6-2. カラーパレットを準備
+plastic_colors = plt.cm.get_cmap('tab10', len(unique_labels))
+
+# 6-3. ラベル名と色を対応付ける辞書を作成
+color_map = {}
+plastic_color_index = 0
+for label in unique_labels:
+    # ★★★ 変更点2: チェックする名前を'background'に変更 ★★★
+    if label == 'background':
+        color_map[label] = 'lightgray'
+    else:
+        color_map[label] = plastic_colors(plastic_color_index)
+        plastic_color_index += 1
+
+# 6-4. プロットの実行
+plt.style.use('seaborn-v0_8-whitegrid')
+plt.figure(figsize=(16, 10))
+ax = sns.scatterplot(
+    x="tsne-2d-one", y="tsne-2d-two",
+    hue="label",
+    hue_order=unique_labels,
+    palette=color_map,
+    data=df_tsne,
+    legend="full",
+    # ★★★ ここを変更 ★★★
+    alpha=1.0,  # 点を不透明に変更 (0.7 -> 1.0)
+    s=50        # 点のサイズを大きく変更 (20 -> 50)
+)
+
+plt.title(f't-SNE Plot of Spectral Data (Sampled from {folder_name})', fontsize=16)
+plt.xlabel('t-SNE Dimension 1', fontsize=12)
+plt.ylabel('t-SNE Dimension 2', fontsize=12)
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+plt.tight_layout(rect=[0, 0, 0.85, 1])
+plt.show()
+
+# %% [markdown]
+# ---
+
+# %% [markdown]
+# ### データセットの学習
+
+# %%
+import pandas as pd
+from pathlib import Path
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+import joblib
+
+# --- ユーザーが設定する項目 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+dataset1_folder_name = "MPs_20250911"
+dataset2_folder_name = "MPs_20250905_2"
+# ------------------------------
+
+# データセットのパスを定義
+dataset1_csv_path = main_dir / dataset1_folder_name / "csv" / "pixel_features_plastics_only.csv"
+dataset2_csv_path = main_dir / dataset2_folder_name / "csv" / "pixel_features_plastics_only.csv"
+
+# データセット1を読み込む
+try:
+    df1 = pd.read_csv(dataset1_csv_path)
+    print(f"データセット1を正常に読み込みました: {dataset1_csv_path}")
+except FileNotFoundError:
+    print(f"エラー: {dataset1_csv_path} が見つかりません。")
+    exit()
+
+# データセット2を読み込む
+try:
+    df2 = pd.read_csv(dataset2_csv_path)
+    print(f"データセット2を正常に読み込みました: {dataset2_csv_path}")
+except FileNotFoundError:
+    print(f"エラー: {dataset2_csv_path} が見つかりません。")
+    exit()
+
+# %%
+import pandas as pd
+from pathlib import Path
+from sklearn.ensemble import RandomForestClassifier
+import joblib
+
+# original_indexを除外する、正しいprepare_data関数
+def prepare_data(df):
+    """データフレームから特徴量とラベルを分割するヘルパー関数"""
+    if df.empty:
+        raise ValueError("データセットにピクセルデータがありません。")
+    
+    # 除外する列のリストを作成
+    columns_to_drop = ['label_name']
+    if 'original_index' in df.columns:
+        columns_to_drop.append('original_index')
+    if 'label_value' in df.columns:
+        columns_to_drop.append('label_value')
+    
+    X = df.drop(columns=columns_to_drop)
+    y = df['label_name']
+    return X, y
+
+def train_and_save(X_train, y_train, model_save_path):
+    print(f"\n--- モデルの学習を開始: {model_save_path.name} ---")
+    model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', n_jobs=-1)
+    model.fit(X_train, y_train)
+    joblib.dump(model, model_save_path)
+    print("学習済みモデルを保存しました。")
+
+# --- ユーザー設定 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+dataset1_folder_name = "MPs_20250911"
+dataset2_folder_name = "MPs_20250905_2"
+# --------------------
+
+try:
+    # ★★★ 読み込むCSVファイル名を変更 ★★★
+    df1 = pd.read_csv(main_dir / dataset1_folder_name / "csv" / "pixel_features_plastics_only.csv")
+    df2 = pd.read_csv(main_dir / dataset2_folder_name / "csv" / "pixel_features_plastics_only.csv")
+except FileNotFoundError as e:
+    print(f"エラー: CSVファイルが見つかりません。パスを確認してください。: {e.filename}")
+    print("先に「データセット作成（プラスチックのみ）」スクリプトを実行してください。")
+    exit()
+
+# データの前処理
+X1, y1 = prepare_data(df1)
+X2, y2 = prepare_data(df2)
+
+# ★★★ 保存するモデルファイル名を変更 ★★★
+# モデル1を学習・保存
+train_and_save(X1, y1, main_dir / "model_plastics_only_dataset1.joblib")
+print(f"データセット1（{dataset1_folder_name}）学習完了")
+
+# モデル2を学習・保存
+train_and_save(X2, y2, main_dir / "model_plastics_only_dataset2.joblib")
+print(f"データセット2（{dataset2_folder_name}）学習完了")
+
+
+# %% [markdown]
+# ### 分類モデルの交差検証
+
+# %%
+import pandas as pd
+from pathlib import Path
+from sklearn.metrics import classification_report
+import joblib
+import time
+
+# original_indexを除外する、正しいprepare_data関数
+def prepare_data(df):
+    """データフレームから特徴量とラベルを分割するヘルパー関数"""
+    if df.empty:
+        raise ValueError("データセットにピクセルデータがありません。")
+    
+    # 除外する列のリストを作成
+    columns_to_drop = ['label_name']
+    if 'original_index' in df.columns:
+        columns_to_drop.append('original_index')
+    if 'label_value' in df.columns:
+        columns_to_drop.append('label_value')
+    
+    X = df.drop(columns=columns_to_drop)
+    y = df['label_name']
+    return X, y
+
+def evaluate_model(model_path, X_test, y_test, model_name):
+    print(f"\n--- {model_name}の評価を開始 ---")
+    start_time = time.time()
+    
+    # モデルの読み込み
+    model = joblib.load(model_path)
+    
+    # 評価
+    y_pred = model.predict(X_test)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    print('--- 精度評価レポート ---')
+    print(classification_report(y_test, y_pred))
+    print(f"評価が完了しました。実行時間: {elapsed_time:.2f}秒")
+    
+    feature_importances = model.feature_importances_
+    feature_names = X_test.columns
+    importance_df = pd.DataFrame({
+        'feature': feature_names,
+        'importance': feature_importances
+    }).sort_values('importance', ascending=False)
+    
+    return importance_df, model
+
+# --- ユーザー設定 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+dataset1_folder_name = "MPs_20250911"
+dataset2_folder_name = "MPs_20250905_2"
+# --------------------
+
+try:
+    # ★★★ 読み込むCSVファイル名を変更 ★★★
+    dataset1_csv_path = main_dir / dataset1_folder_name / "csv" / "pixel_features_plastics_only.csv"
+    dataset2_csv_path = main_dir / dataset2_folder_name / "csv" / "pixel_features_plastics_only.csv"
+    
+    df1 = pd.read_csv(dataset1_csv_path)
+    df2 = pd.read_csv(dataset2_csv_path)
+except FileNotFoundError as e:
+    print(f"エラー: CSVファイルが見つかりません。パスを確認してください。: {e.filename}")
+    exit()
+
+# データの前処理
+X1, y1 = prepare_data(df1)
+X2, y2 = prepare_data(df2)
+
+# ★★★ 読み込むモデルファイル名を変更 ★★★
+# 交差検証1: モデル1を評価
+importance1, model1 = evaluate_model(main_dir / "model_plastics_only_dataset1.joblib", X2, y2, "モデル1 (Dataset1で学習)")
+
+# 交差検証2: モデル2を評価
+importance2, model2 = evaluate_model(main_dir / "model_plastics_only_dataset2.joblib", X1, y1, "モデル2 (Dataset2で学習)")
+
+# --- 結果を保存するコードブロック ---
+data1_output_dir = main_dir / dataset1_folder_name
+data2_output_dir = main_dir / dataset2_folder_name
+
+# ★★★ 保存するレポートファイル名を変更 ★★★
+# 交差検証1の結果
+with open(data1_output_dir / "classification_report_plastics_only_model1.txt", "w") as f:
+    f.write(classification_report(y2, model1.predict(X2)))
+
+# 交差検証2の結果
+with open(data2_output_dir / "classification_report_plastics_only_model2.txt", "w") as f:
+    f.write(classification_report(y1, model2.predict(X1)))
+
+# ★★★ 保存する重要度ファイル名を変更 ★★★
+# 特徴量重要度をCSVファイルとして保存
+importance1.to_csv(data1_output_dir / "csv" / "importance_plastics_only_from_dataset1.csv", index=False)
+importance2.to_csv(data2_output_dir / "csv" / "importance_plastics_only_from_dataset2.csv", index=False)
+
+print("\n--- 全ての処理が完了しました ---")
+print(f"精度レポートと重要度ランキングは各データセットフォルダに保存されました。")
+
+
+# %% [markdown]
+# ### 分類結果の可視化
+
+# %%
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from PIL import Image
+import joblib
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import labelme
+import json
+
+# --- ユーザー設定 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+# 評価に使用するデータセット（正解ラベルを表示する側）
+test_dataset_folder_name = "MPs_20250905_2" 
+# 使用する学習済みモデル (プラスチックのみで学習させたモデル)
+model_path = main_dir / "model_plastics_only_dataset1.joblib"
+# --------------------
+
+# 1. データの準備
+print("--- データの準備 ---")
+
+# ★★★ プラスチックの色のみを定義 ★★★
+label_to_color_map = {
+    "ABS": "red", "HDPE": "blue", "LDPE": "green", "PC": "yellow", "PET": "purple",
+    "PMMA": "orange", "PP": "cyan", "PS": "magenta", "PVC": "lime"
+}
+
+# 評価対象のJSONとCSVファイルのパスを定義
+json_path = main_dir / test_dataset_folder_name / f"{test_dataset_folder_name}_Ex-1_Em-1_ET300_step1.json"
+# ★★★ プラスチックのみのCSVを読み込む ★★★
+test_csv_path = main_dir / test_dataset_folder_name / "csv" / "pixel_features_plastics_only.csv"
+
+# 2. 正解ラベルマスクの作成 (左側の画像)
+print("正解ラベルマスク（プラスチックのみ）を作成しています...")
+with open(json_path, 'r') as f:
+    json_data = json.load(f)
+
+img_height = json_data['imageHeight']
+img_width = json_data['imageWidth']
+
+# labelme形式で数値マスクを生成
+labels_in_json = sorted(list(set(shape['label'] for shape in json_data['shapes'])))
+label_name_to_value = {label: i for i, label in enumerate(labels_in_json, start=1)}
+numeric_ground_truth_mask, _ = labelme.utils.shapes_to_label((img_height, img_width), json_data['shapes'], label_name_to_value)
+
+# 数値マスクをカラーマスクに変換 (★★★ 背景は描画しない ★★★)
+ground_truth_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+for label_name, label_value in label_name_to_value.items():
+    # プラスチックラベルのみを色付けする
+    if label_name in label_to_color_map:
+        color_rgb = (np.array(plt.cm.colors.to_rgb(label_to_color_map[label_name])) * 255).astype(np.uint8)
+        ground_truth_mask[numeric_ground_truth_mask == label_value] = color_rgb
+
+# 3. 予測結果マスクの作成 (右側の画像)
+print("モデルによる予測とマスク作成を実行しています...")
+model = joblib.load(model_path)
+feature_names_from_model = model.feature_names_in_
+
+df_test = pd.read_csv(test_csv_path)
+
+original_indices = df_test['original_index'].values
+X_test = df_test[feature_names_from_model]
+y_pred = model.predict(X_test)
+
+predicted_mask_flat = np.zeros((img_height * img_width, 3), dtype=np.uint8)
+for label_name, color_name in label_to_color_map.items():
+    pred_indices_in_y = np.where(y_pred == label_name)[0]
+    if len(pred_indices_in_y) > 0:
+        img_indices_to_paint = original_indices[pred_indices_in_y]
+        color_rgb = (np.array(plt.cm.colors.to_rgb(color_name)) * 255).astype(np.uint8)
+        predicted_mask_flat[img_indices_to_paint] = color_rgb
+
+predicted_mask = predicted_mask_flat.reshape(img_height, img_width, 3)
+
+# 4. 2つの画像を並べてプロット
+print("\n--- 結果の比較表示 ---")
+fig, axes = plt.subplots(1, 2, figsize=(18, 9))
+
+# 左: 正解ラベル
+axes[0].imshow(ground_truth_mask)
+axes[0].set_title('Ground Truth (Plastics Only)', fontsize=16)
+axes[0].axis('off')
+
+# 右: モデルの予測結果
+axes[1].imshow(predicted_mask)
+axes[1].set_title('Model Prediction (Plastics Only)', fontsize=16)
+axes[1].axis('off')
+
+# 共通の凡例を作成
+legend_patches = []
+for label_name, color in sorted(label_to_color_map.items()):
+    legend_patches.append(mpatches.Patch(color=color, label=label_name))
+fig.legend(handles=legend_patches, bbox_to_anchor=(1.0, 0.9), loc='upper left', fontsize=12)
+
+plt.tight_layout(rect=[0, 0, 0.85, 1])
+plt.show()
+
+
+# %%
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from PIL import Image
+import joblib
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import labelme
+import json
+
+# --- ユーザー設定 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+# 評価に使用するデータセット（正解ラベルを表示する側）
+test_dataset_folder_name = "MPs_20250911" 
+# 使用する学習済みモデル (プラスチックのみで学習させたモデル)
+model_path = main_dir / "model_plastics_only_dataset2.joblib"
+# --------------------
+
+# 1. データの準備
+print("--- データの準備 ---")
+
+# ★★★ プラスチックの色のみを定義 ★★★
+label_to_color_map = {
+    "ABS": "red", "HDPE": "blue", "LDPE": "green", "PC": "yellow", "PET": "purple",
+    "PMMA": "orange", "PP": "cyan", "PS": "magenta", "PVC": "lime"
+}
+
+# 評価対象のJSONとCSVファイルのパスを定義
+json_path = main_dir / test_dataset_folder_name / f"{test_dataset_folder_name}_Ex-1_Em-1_ET300_step1.json"
+# ★★★ プラスチックのみのCSVを読み込む ★★★
+test_csv_path = main_dir / test_dataset_folder_name / "csv" / "pixel_features_plastics_only.csv"
+
+# 2. 正解ラベルマスクの作成 (左側の画像)
+print("正解ラベルマスク（プラスチックのみ）を作成しています...")
+with open(json_path, 'r') as f:
+    json_data = json.load(f)
+
+img_height = json_data['imageHeight']
+img_width = json_data['imageWidth']
+
+# labelme形式で数値マスクを生成
+labels_in_json = sorted(list(set(shape['label'] for shape in json_data['shapes'])))
+label_name_to_value = {label: i for i, label in enumerate(labels_in_json, start=1)}
+numeric_ground_truth_mask, _ = labelme.utils.shapes_to_label((img_height, img_width), json_data['shapes'], label_name_to_value)
+
+# 数値マスクをカラーマスクに変換 (★★★ 背景は描画しない ★★★)
+ground_truth_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+for label_name, label_value in label_name_to_value.items():
+    # プラスチックラベルのみを色付けする
+    if label_name in label_to_color_map:
+        color_rgb = (np.array(plt.cm.colors.to_rgb(label_to_color_map[label_name])) * 255).astype(np.uint8)
+        ground_truth_mask[numeric_ground_truth_mask == label_value] = color_rgb
+
+# 3. 予測結果マスクの作成 (右側の画像)
+print("モデルによる予測とマスク作成を実行しています...")
+model = joblib.load(model_path)
+feature_names_from_model = model.feature_names_in_
+
+df_test = pd.read_csv(test_csv_path)
+
+original_indices = df_test['original_index'].values
+X_test = df_test[feature_names_from_model]
+y_pred = model.predict(X_test)
+
+predicted_mask_flat = np.zeros((img_height * img_width, 3), dtype=np.uint8)
+for label_name, color_name in label_to_color_map.items():
+    pred_indices_in_y = np.where(y_pred == label_name)[0]
+    if len(pred_indices_in_y) > 0:
+        img_indices_to_paint = original_indices[pred_indices_in_y]
+        color_rgb = (np.array(plt.cm.colors.to_rgb(color_name)) * 255).astype(np.uint8)
+        predicted_mask_flat[img_indices_to_paint] = color_rgb
+
+predicted_mask = predicted_mask_flat.reshape(img_height, img_width, 3)
+
+# 4. 2つの画像を並べてプロット
+print("\n--- 結果の比較表示 ---")
+fig, axes = plt.subplots(1, 2, figsize=(18, 9))
+
+# 左: 正解ラベル
+axes[0].imshow(ground_truth_mask)
+axes[0].set_title('Ground Truth (Plastics Only)', fontsize=16)
+axes[0].axis('off')
+
+# 右: モデルの予測結果
+axes[1].imshow(predicted_mask)
+axes[1].set_title('Model Prediction (Plastics Only)', fontsize=16)
+axes[1].axis('off')
+
+# 共通の凡例を作成
+legend_patches = []
+for label_name, color in sorted(label_to_color_map.items()):
+    legend_patches.append(mpatches.Patch(color=color, label=label_name))
+fig.legend(handles=legend_patches, bbox_to_anchor=(1.0, 0.9), loc='upper left', fontsize=12)
+
+plt.tight_layout(rect=[0, 0, 0.85, 1])
+plt.show()
+
 
 # %% [markdown]
 # ---
@@ -1359,6 +2074,9 @@ print(importance_df.head())
 
 # %% [markdown]
 # ## データセットの作成
+
+# %%
+
 
 # %% [markdown]
 # ### 背景あり
