@@ -1449,7 +1449,7 @@ print(f"データセット2（{dataset2_folder_name}）学習完了")
 
 
 # %% [markdown]
-# ### 分類モデルの交差検証
+# ### 分類モデルの交差検証・特徴量重要度
 
 # %%
 import pandas as pd
@@ -1906,9 +1906,296 @@ plt.show()
 # ---
 
 # %% [markdown]
-# # 特徴量重要度上位を使用し、分類精度と計測時間の関係を調べる
+# # 特徴量重要度から分類に必要な計測時間と精度を調べる
+
+# %%
+import pandas as pd
+from pathlib import Path
+
+# --- ユーザー設定 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+dataset1_folder_name = "MPs_20250911"
+dataset2_folder_name = "MPs_20250905_2"
+# プラスチックのみのデータセットを使用
+csv_filename = "pixel_features_plastics_only.csv"
+importance_filename1 = "importance_plastics_only_from_dataset1.csv"
+importance_filename2 = "importance_plastics_only_from_dataset2.csv"
+# --------------------
+
+# 1. 2つの特徴量重要度ランキングのファイルを読み込み、統合する
+print("--- ステップ1: 共通重要度ランキングの作成 ---")
+try:
+    imp1_df = pd.read_csv(main_dir / dataset1_folder_name / "csv" / importance_filename1)
+    imp2_df = pd.read_csv(main_dir / dataset2_folder_name / "csv" / importance_filename2)
+
+    # 2つのランキングを特徴量名で結合し、平均重要度を計算
+    merged_imp = pd.merge(imp1_df, imp2_df, on='feature', suffixes=('_d1', '_d2'))
+    merged_imp['average_importance'] = (merged_imp['importance_d1'] + merged_imp['importance_d2']) / 2
+
+    # 平均重要度でソートし、最終的なランキングを作成
+    final_importances = merged_imp.sort_values('average_importance', ascending=False)
+    sorted_features = final_importances['feature'].tolist()
+    
+    print("2つのモデルの平均重要度に基づき、特徴量ランキングを再計算しました。")
+    print("重要度トップ5の分光画像:")
+    print(sorted_features[:5])
+
+except FileNotFoundError as e:
+    print(f"エラー: 特徴量重要度ファイルが見つかりません: {e.filename}")
+    print("先に「交差検証（プラスチックのみ）」スクリプトを実行して、重要度ファイルを作成してください。")
+    exit()
+
+# 2. 検証に使用するデータセットを読み込む
+df1 = pd.read_csv(main_dir / dataset1_folder_name / "csv" / csv_filename)
+df2 = pd.read_csv(main_dir / dataset2_folder_name / "csv" / csv_filename)
+print("\n検証用データセットの読み込みが完了しました。")
+
+
+# %%
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+import time
+
+# --- ユーザー設定 ---
+# 検証する特徴量の枚数のリスト
+# num_features_steps = [1, 5, 10, 20, 30, 50, 100, 150, 200]
+num_features_steps = [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+
+# --------------------
+
+# 結果を保存するためのリスト
+results_log = []
+
+def prepare_data(df, features_to_use):
+    """指定された特徴量だけを使ってX, yを準備する関数"""
+    # label_nameと指定された特徴量だけを抽出
+    subset_df = df[['label_name'] + features_to_use]
+    X = subset_df.drop(columns=['label_name'])
+    y = subset_df['label_name']
+    return X, y
+
+# ステップごとにループ
+for n_features in num_features_steps:
+    start_time = time.time()
+    
+    # 使用する特徴量を上位から選択
+    selected_features = sorted_features[:n_features]
+    
+    print(f"\n--- 特徴量 {n_features} 枚で交差検証中... ---")
+    
+    # 1. データセット1で学習 -> データセット2で評価
+    X1, y1 = prepare_data(df1, selected_features)
+    X2, y2 = prepare_data(df2, selected_features)
+    
+    model1 = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', n_jobs=-1)
+    model1.fit(X1, y1)
+    y_pred1 = model1.predict(X2)
+    report1 = classification_report(y2, y_pred1, output_dict=True, zero_division=0)
+
+    # 2. データセット2で学習 -> データセット1で評価
+    model2 = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', n_jobs=-1)
+    model2.fit(X2, y2)
+    y_pred2 = model2.predict(X1)
+    report2 = classification_report(y1, y_pred2, output_dict=True, zero_division=0)
+    
+    # 3. 両方向のF1スコアの平均を記録
+    result_row = {'num_features': n_features}
+    all_labels = sorted(list(set(y1) | set(y2))) # 全ラベルのリストを作成
+    for label in all_labels:
+        f1_1 = report1.get(label, {}).get('f1-score', 0)
+        f1_2 = report2.get(label, {}).get('f1-score', 0)
+        result_row[label] = (f1_1 + f1_2) / 2.0
+    results_log.append(result_row)
+    
+    end_time = time.time()
+    print(f"完了。処理時間: {end_time - start_time:.2f} 秒")
+
+# 結果をDataFrameに変換
+results_df = pd.DataFrame(results_log)
+results_df.to_csv(main_dir / "crossval_performance_vs_num_features.csv", index=False)
+print("\n--- 全ステップの評価が完了しました ---")
+print("結果を crossval_performance_vs_num_features.csv に保存しました。")
+print(results_df)
+
+
+# %%
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# ステップ2で作成したDataFrame (results_df) を使用
+df_melted = results_df.melt(id_vars='num_features', var_name='plastic_type', value_name='f1_score')
+
+# グラフの描画
+plt.style.use('seaborn-v0_8-whitegrid')
+plt.figure(figsize=(18, 10))
+
+sns.lineplot(data=df_melted, x='num_features', y='f1_score', hue='plastic_type', marker='o', palette='tab10')
+
+# グラフの装飾
+plt.title('Cross-Validation Performance vs. Number of Top Features', fontsize=20)
+plt.xlabel('Number of Spectral Images Used (by importance)', fontsize=14)
+plt.ylabel('Average F1-Score (Cross-Validation)', fontsize=14)
+plt.xticks(results_df['num_features'].unique(), rotation=45)
+plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+plt.legend(title='Plastic Type', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout(rect=[0, 0, 0.85, 1])
+plt.show()
+
 
 # %% [markdown]
 # ---
+
+# %% [markdown]
+# ### 分光画像の平均画素値から、EEMを作成
+
+# %% [markdown]
+# 平均スペクトルデータの作成
+
+# %%
+import pandas as pd
+import numpy as np
+import labelme
+import json
+from PIL import Image
+from pathlib import Path
+import re
+
+# --- ユーザー設定 ---
+folder_name = "MPs_20250911"
+main_dir = Path(f"C:/Users/sawamoto24/sawamoto24/master/microplastic/data/{folder_name}")
+reference_file_stem = f"{folder_name}_Ex-1_Em-1_ET300_step1"
+# --------------------
+
+# 1. JSONファイルを読み込み、ラベルマスクを作成
+print("--- ステップ1: 平均スペクトルデータの作成 ---")
+json_path = main_dir / (reference_file_stem + ".json")
+with open(json_path, 'r') as f:
+    data = json.load(f)
+
+image_size = (data['imageHeight'], data['imageWidth'])
+labels_in_json = sorted(list(set(shape['label'] for shape in data['shapes'])))
+label_name_to_value = {label: i for i, label in enumerate(labels_in_json, start=1)}
+class_label_mask, _ = labelme.utils.shapes_to_label(image_size, data['shapes'], label_name_to_value)
+
+# 2. 各分光画像を読み込み、プラスチックごとに画素値の平均を計算
+wavelength_pattern = re.compile(r'Ex(\d+)_Em(\d+)')
+image_files = list(main_dir.glob("*.tiff"))
+
+# 結果を格納する辞書を初期化
+mean_spectra = {label: {} for label in labels_in_json}
+
+for image_path in image_files:
+    if '-1_Em-1' in image_path.stem: continue
+    match = wavelength_pattern.search(image_path.name)
+    if not match: continue
+    
+    ex_wave = int(match.group(1))
+    em_wave = int(match.group(2))
+
+    try:
+        img = np.asarray(Image.open(image_path))
+    except Exception as e:
+        print(f"Warning: Failed to process {image_path.name}. Reason: {e}")
+        continue
+
+    # 各プラスチック領域の平均値を計算
+    for label_name, label_value in label_name_to_value.items():
+        mean_intensity = np.mean(img[class_label_mask == label_value])
+        mean_spectra[label_name][(ex_wave, em_wave)] = mean_intensity
+
+print("平均スペクトルデータの作成が完了しました。")
+
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+
+# --- ユーザー設定 ---
+# EEMの軸範囲と刻み幅
+EX_MIN, EX_MAX, EX_STEP = 260, 600, 20
+EM_MIN, EM_MAX, EM_STEP = 260, 600, 20
+
+# ★★★ プロットする順番をここで指定 ★★★
+plastics_to_plot = [
+    'PP', 'PC', 'ABS',
+    'PS', 'PET', 'HDPE',
+    'PVC', 'PMMA', 'LDPE'
+]
+# --------------------
+
+# EEMの軸を定義
+excitation_axis = np.arange(EX_MIN, EX_MAX + EX_STEP, EX_STEP)
+emission_axis = np.arange(EM_MIN, EM_MAX + EM_STEP, EM_STEP)
+
+# 各プラスチックについてEEMを作成・描画
+num_plastics = len(plastics_to_plot)
+ncols = 3
+nrows = int(np.ceil(num_plastics / ncols))
+fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 5, nrows * 5))
+if nrows == 1 or ncols == 1:
+    axes = np.array(axes).reshape(nrows, ncols)
+
+for i, plastic_name in enumerate(plastics_to_plot):
+    # check if the plastic name from the custom list exists in the data
+    if plastic_name not in mean_spectra:
+        print(f"警告: 指定されたプラスチック '{plastic_name}' のデータが見つかりません。スキップします。")
+        # Turn off the axis for the empty plot
+        ax = axes[i // ncols, i % ncols]
+        ax.axis('off')
+        continue
+
+    ax = axes[i // ncols, i % ncols]
+    
+    # EEM行列の形を(励起, 放射)に入れ替え
+    eem_matrix = np.full((len(excitation_axis), len(emission_axis)), np.nan)
+    
+    # 平均スペクトルデータをEEM行列にマッピング
+    for (ex, em), intensity in mean_spectra[plastic_name].items():
+        try:
+            ex_idx = np.where(excitation_axis == ex)[0][0]
+            em_idx = np.where(emission_axis == em)[0][0]
+            # 行と列のインデックスを入れ替え
+            eem_matrix[ex_idx, em_idx] = intensity
+        except IndexError:
+            pass
+            
+    # 散乱光や無効領域をマスク
+    for ex_idx, ex in enumerate(excitation_axis):
+        for em_idx, em in enumerate(emission_axis):
+            if em <= ex:
+                 # 行と列のインデックスを入れ替え
+                eem_matrix[ex_idx, em_idx] = np.nan
+
+    # ヒートマップを描画
+    cmap = plt.get_cmap('viridis').copy()
+    cmap.set_bad(color='black')
+    
+    # extentの範囲を(放射, 励起)に入れ替え
+    im = ax.imshow(eem_matrix, cmap=cmap, origin='lower', 
+                   extent=[EM_MIN, EM_MAX, EX_MIN, EX_MAX], aspect='auto')
+    
+    # 表示範囲の軸を入れ替え
+    ax.set_xlim(250, 600)
+    ax.set_ylim(250, 600)
+    
+    ax.set_title(plastic_name)
+    # X軸とY軸のラベルを入れ替え
+    ax.set_xlabel('Emission (nm)')
+    ax.set_ylabel('Excitation (nm)')
+
+    # グリッドを非表示にする
+    ax.grid(False)
+    
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label('Intensity')
+
+# 使わないサブプロットを非表示
+for j in range(i + 1, nrows * ncols):
+    fig.delaxes(axes.flatten()[j])
+
+plt.tight_layout()
+plt.show()
+
+
 
 
