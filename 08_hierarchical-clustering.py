@@ -566,5 +566,120 @@ print("全ての階層レベルの評価が完了しました。")
 
 # %% [markdown]
 # ---
+# ## 階層的分類のパイプライン検証
+
+# %%
+import pandas as pd
+from pathlib import Path
+import numpy as np
+from sklearn.model_selection import LeaveOneGroupOut
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+import joblib
+
+# --- ユーザー設定 ---
+main_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/data")
+dataset1_folder_name = "MPs_20250911"
+dataset2_folder_name = "MPs_20250905_2"
+csv_filename = "pixel_features_with_instance_id.csv"
+output_dir = Path("C:/Users/sawamoto24/sawamoto24/master/microplastic/results/階層的分類_パイプライン検証_LOOCV")
+# --------------------
+
+# --- ステップ1: 階層ラベル付きデータセットの作成 ---
+print("--- ステップ1: 階層ラベルデータセットの作成 ---")
+output_dir.mkdir(parents=True, exist_ok=True)
+print(f"結果は {output_dir} に保存されます。")
+
+level1_map = {
+    'PVC': 'Group_A', 'PS': 'Group_A', 'ABS': 'Group_A', 'PET': 'Group_A',
+    'PMMA': 'Group_B', 'PC': 'Group_B', 'PP': 'Group_B', 'LDPE': 'Group_B', 'HDPE': 'Group_B'
+}
+
+try:
+    df1 = pd.read_csv(main_dir / dataset1_folder_name / "csv" / csv_filename)
+    df2 = pd.read_csv(main_dir / dataset2_folder_name / "csv" / csv_filename)
+    df2['instance_id'] = df2['instance_id'] + 1000 
+    combined_df = pd.concat([df1, df2], ignore_index=True)
+    combined_df['level1'] = combined_df['label_name'].map(level1_map)
+    print("データセットの準備が完了しました。")
+except FileNotFoundError as e:
+    print(f"エラー: CSVファイルが見つかりません: {e.filename}")
+    exit()
+
+# --- ステップ2: インスタンス単位のリーブ・ワン・アウト交差検証 ---
+print("\n--- ステップ2: インスタンス単位での検証を開始 ---")
+X = combined_df.drop(columns=['label_name', 'original_index', 'instance_id', 'level1'])
+y = combined_df['label_name']
+y_level1 = combined_df['level1']
+groups = combined_df['instance_id']
+
+logo = LeaveOneGroupOut()
+pipeline_preds, baseline_preds, all_true = [], [], []
+num_splits = logo.get_n_splits(groups=groups)
+current_split = 0
+
+for train_idx, test_idx in logo.split(X, y, groups):
+    current_split += 1
+    print(f"検証中... {current_split}/{num_splits}")
+
+    # --- ★★★ ループ内で毎回、訓練データとテストデータを分割 ★★★ ---
+    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+    y_level1_train = y_level1.iloc[train_idx]
+    
+    # --- ★★★ ループ内で毎回、モデルをゼロから学習 ★★★ ---
+    # Level 1 モデル (Group A vs B)
+    model_level1 = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', n_jobs=-1).fit(X_train, y_level1_train)
+
+    # Level 2 モデル (Group A内での分類)
+    df_group_a_train = combined_df.iloc[train_idx][combined_df.iloc[train_idx]['level1'] == 'Group_A']
+    X_group_a_train = df_group_a_train.drop(columns=['label_name', 'original_index', 'instance_id', 'level1'])
+    y_group_a_train = df_group_a_train['label_name']
+    model_level2 = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', n_jobs=-1).fit(X_group_a_train, y_group_a_train)
+    
+    # Level 3 モデル (Group B内での分類)
+    df_group_b_train = combined_df.iloc[train_idx][combined_df.iloc[train_idx]['level1'] == 'Group_B']
+    X_group_b_train = df_group_b_train.drop(columns=['label_name', 'original_index', 'instance_id', 'level1'])
+    y_group_b_train = df_group_b_train['label_name']
+    model_level3 = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', n_jobs=-1).fit(X_group_b_train, y_group_b_train)
+    
+    # ベースラインモデル (通常の9クラス分類)
+    model_baseline = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', n_jobs=-1).fit(X_train, y_train)
+
+    # --- ★★★ 学習させたモデルでテストデータを予測 ★★★ ---
+    # 階層パイプライン
+    level1_pred = model_level1.predict(X_test)
+    final_pred = np.empty_like(level1_pred)
+    is_group_a = (level1_pred == 'Group_A')
+    is_group_b = (level1_pred == 'Group_B')
+    if np.any(is_group_a): final_pred[is_group_a] = model_level2.predict(X_test[is_group_a])
+    if np.any(is_group_b): final_pred[is_group_b] = model_level3.predict(X_test[is_group_b])
+    pipeline_preds.extend(final_pred)
+    
+    # ベースラインモデル
+    baseline_preds.extend(model_baseline.predict(X_test))
+    
+    all_true.extend(y_test)
+
+# --- ステップ3: 結果の比較と保存 ---
+print("\n--- ステップ3: 結果の比較と保存 ---")
+
+# ベースラインモデル
+baseline_report_str = classification_report(all_true, baseline_preds)
+print("\n" + "="*20 + " ベースラインモデル (9クラス) " + "="*20)
+print(baseline_report_str)
+with open(output_dir / "report_baseline_model.txt", 'w', encoding='utf-8') as f:
+    f.write(baseline_report_str)
+
+# 階層的分類パイプライン
+pipeline_report_str = classification_report(all_true, pipeline_preds)
+print("\n" + "="*20 + " 階層的分類パイプライン " + "="*20)
+print(pipeline_report_str)
+with open(output_dir / "report_pipeline_model.txt", 'w', encoding='utf-8') as f:
+    f.write(pipeline_report_str)
+
+print(f"\n全てのレポートを {output_dir} に保存しました。")
+
+
 
 
