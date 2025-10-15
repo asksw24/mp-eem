@@ -22,3 +22,5 @@ __pycache__/
 *.FD3
 *.TXT
 *.FLR
+
+results/

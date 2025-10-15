@@ -432,6 +432,9 @@ plt.show()
 # %% [markdown]
 # ### クラス別分類
 
+# %% [markdown]
+# 階層別にデータセットを作成
+
 # %%
 import pandas as pd
 from pathlib import Path
@@ -484,6 +487,9 @@ combined_df_hierarchical['level3'] = combined_df_hierarchical['label_name'].map(
 print("階層ラベルの追加が完了しました。")
 print("データセットのプレビュー:")
 print(combined_df_hierarchical[['label_name', 'level1', 'level2', 'level3']].head())
+
+# %% [markdown]
+# モデルの学習と検証
 
 # %%
 from sklearn.model_selection import LeaveOneGroupOut
@@ -558,6 +564,23 @@ for target_level in target_levels:
         f.write(f"--- {target_level} | インスタンス単位LOOCV 精度レポート ---\n\n")
         f.write(report_str)
     print(f"レポートを {output_path} に保存しました。")
+
+    # 4. 特徴量重要度の算出と保存
+    print(f"\n--- {target_level} レベルの特徴量重要度を計算 ---")
+    # このレベルの全データを使って最終モデルを一度だけ学習
+    final_model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', n_jobs=-1)
+    final_model.fit(X, y)
+
+    # 重要度をDataFrameに変換
+    importances_df = pd.DataFrame({
+        'feature': X.columns,
+        'importance': final_model.feature_importances_
+    }).sort_values('importance', ascending=False)
+
+    # CSVファイルとして保存
+    importance_output_path = output_dir / f"feature_importance_{target_level}.csv"
+    importances_df.to_csv(importance_output_path, index=False)
+    print(f"特徴量重要度を {importance_output_path} に保存しました。")
 
 print(f"\n{'='*60}")
 print("全ての階層レベルの評価が完了しました。")
